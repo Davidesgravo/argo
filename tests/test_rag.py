@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from argo.prompts.rag import QueryCache, RagIndex, build_index
 from argo.schema import Dossier, Sample
 
@@ -83,7 +86,30 @@ def test_query_cache_persists(tmp_path):
         calls.append(texts)
         return fake_embed(texts)
 
-    c = QueryCache(tmp_path / "q.json")
-    v1 = c.get("k", "bun", counting)
-    v2 = QueryCache(tmp_path / "q.json").get("k", "bun", counting)
+    c = QueryCache(tmp_path / "q.json", "embed-a")
+    v1 = c.get("bun", counting)
+    v2 = QueryCache(tmp_path / "q.json", "embed-a").get("bun", counting)
     assert v1 == v2 and len(calls) == 1
+    assert [p.name for p in tmp_path.iterdir()] == ["q.json"]  # atomic write, no tmp left
+
+
+def test_query_cache_key_is_model_and_text_hash(tmp_path):
+    calls = []
+
+    def counting(texts):
+        calls.append(texts)
+        return fake_embed(texts)
+
+    path = tmp_path / "q.json"
+    QueryCache(path, "embed-a").get("bun", counting)
+    expected = hashlib.sha256(b"embed-a\nbun").hexdigest()
+    assert list(json.loads(path.read_text())) == [expected]
+    QueryCache(path, "embed-b").get("bun", counting)  # other model: new entry
+    QueryCache(path, "embed-a").get("bun token", counting)  # other text: new entry
+    assert len(calls) == 3 and len(json.loads(path.read_text())) == 3
+
+
+def test_query_cache_does_not_read_until_used(tmp_path):
+    path = tmp_path / "q.json"
+    path.write_text("{not json")  # would fail if read eagerly
+    QueryCache(path, "embed-a")

@@ -1,4 +1,6 @@
+import hashlib
 import json
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,16 +77,35 @@ def build_index(
 
 
 class QueryCache:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.data: dict[str, list[float]] = json.loads(path.read_text()) if path.exists() else {}
+    """Query embeddings keyed by sha256(embed model + "\n" + query text).
 
-    def get(self, key: str, text: str, embed: Embedder) -> list[float]:
-        if key not in self.data:
-            self.data[key] = embed([text])[0]
+    The key depends only on what is embedded, so different callers (experiment, UI) can
+    never collide on a package name. The file is read lazily and written atomically.
+    """
+
+    def __init__(self, path: Path, model: str = EMBED_MODEL) -> None:
+        self.path = path
+        self.model = model
+        self._data: dict[str, list[float]] | None = None
+
+    def _load(self) -> dict[str, list[float]]:
+        if self._data is None:
+            self._data = json.loads(self.path.read_text()) if self.path.exists() else {}
+        return self._data
+
+    def key(self, text: str) -> str:
+        return hashlib.sha256(f"{self.model}\n{text}".encode()).hexdigest()
+
+    def get(self, text: str, embed: Embedder) -> list[float]:
+        data = self._load()
+        key = self.key(text)
+        if key not in data:
+            data[key] = embed([text])[0]
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.data))
-        return self.data[key]
+            tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(data))
+            os.replace(tmp, self.path)
+        return data[key]
 
 
 def ollama_embedder(

@@ -189,3 +189,14 @@ def test_p3_retrieves_neighbors_and_caches_query(tmp_path):
 
     p1 = predictor.predict("r", "a", _d("a"), "m", "p1", None)
     assert p1.rag_index is None and p1.rag_neighbors is None
+
+
+def test_predictor_query_cache_path_is_configurable(tmp_path):
+    history = [_s("h1", "nato_malevolo", split="history", history_set="base")]
+    build_index("storico_base", history, {"h1": _d("h1")}, _hist_embed).save(tmp_path)
+    ui_cache = tmp_path / "ui" / "query_cache_ui.json"
+    client = FakeClient([GOOD.model_dump_json()])
+    Predictor(client, [], rag_dir=tmp_path, query_cache_path=ui_cache).predict(
+        "ui", "a", _d("a"), "m", "p3", "storico_base"
+    )
+    assert ui_cache.exists() and not (tmp_path / "query_cache.json").exists()

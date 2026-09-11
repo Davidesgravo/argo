@@ -1,7 +1,7 @@
 import httpx
 import streamlit as st
 
-from argo.config import BASELINE_PATH, CONTROL_MODEL, CORPUS_PATH, MODELS
+from argo.config import BASELINE_PATH, CONTROL_MODEL, CORPUS_PATH, MODELS, RAG_DIR
 from argo.dataset.build import load_corpus
 from argo.extract.build import load_baseline
 from argo.llm.ollama import OllamaClient, OllamaError
@@ -39,7 +39,8 @@ _CLIENT = OllamaClient()  # no connection is opened until the first request
 @st.cache_resource(show_spinner=False)
 def get_predictor() -> Predictor:
     fewshot = load_fewshot() if FEWSHOT_PATH.exists() else []
-    return Predictor(_CLIENT, fewshot)
+    # The UI keeps its own query-embedding cache so it never writes the experiment's file.
+    return Predictor(_CLIENT, fewshot, query_cache_path=RAG_DIR / "query_cache_ui.json")
 
 
 def ollama_problem() -> str | None:

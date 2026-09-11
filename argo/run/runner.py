@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from argo.config import (
     EMBED_MODEL,
-    EXTRACTOR_VERSION,
     LLM_OPTIONS,
     RAG_DIR,
     RETRY_NUM_PREDICT,
@@ -82,13 +81,19 @@ def _parse(content: str) -> Verdict | None:
 
 
 class Predictor:
-    def __init__(self, client: LLMClient, fewshot: list[Example], rag_dir: Path = RAG_DIR) -> None:
+    def __init__(
+        self,
+        client: LLMClient,
+        fewshot: list[Example],
+        rag_dir: Path = RAG_DIR,
+        query_cache_path: Path | None = None,
+    ) -> None:
         self.client = client
         self.fewshot = fewshot
         self.rag_dir = rag_dir
         self._indexes: dict[str, RagIndex] = {}
         self._digests: dict[str, str] = {}
-        self._queries = QueryCache(rag_dir / "query_cache.json")
+        self._queries = QueryCache(query_cache_path or rag_dir / "query_cache.json", EMBED_MODEL)
         self._embed = ollama_embedder(client, EMBED_MODEL, QUERY_PREFIX)
 
     def _digest(self, model: str) -> str:
@@ -96,11 +101,10 @@ class Predictor:
             self._digests[model] = self.client.model_digest(model)
         return self._digests[model]
 
-    def _neighbors(self, sample_id: str, dossier: Dossier, index_name: str) -> list[Example]:
+    def _neighbors(self, dossier: Dossier, index_name: str) -> list[Example]:
         if index_name not in self._indexes:
             self._indexes[index_name] = RagIndex.load(index_name, self.rag_dir)
-        key = f"{EMBED_MODEL}|{EXTRACTOR_VERSION}|{sample_id}"
-        vector = self._queries.get(key, compress_dossier(dossier.text), self._embed)
+        vector = self._queries.get(compress_dossier(dossier.text), self._embed)
         return [n.example for n in self._indexes[index_name].query(vector, k=3)]
 
     def predict(
@@ -116,7 +120,7 @@ class Predictor:
         if prompt_id == "p2":
             examples = self.fewshot
         elif prompt_id == "p3":
-            examples = self._neighbors(sample_id, dossier, rag_index or "storico_base")
+            examples = self._neighbors(dossier, rag_index or "storico_base")
         rp = render(prompt_id, dossier.text, examples)
         options = dict(LLM_OPTIONS)
         think = False if model in THINKING_MODELS else None
