@@ -1,0 +1,6 @@
+Answer with a JSON object with these fields, in this order:
+- evidence: up to 5 short facts taken from the dossier that support your decision
+- reasoning: at most 3 sentences
+- technique: one of lifecycle_script, credential_theft, obfuscated_payload, exfiltration, self_propagation, dependency_confusion, typosquatting, none, other (use none when benign)
+- verdict: malicious or benign
+- confidence: a number between 0 and 1

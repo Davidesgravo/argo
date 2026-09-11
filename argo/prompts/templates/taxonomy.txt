@@ -1,0 +1,15 @@
+Known npm supply-chain attack patterns:
+1. Install-time execution: a new or changed preinstall/install/postinstall script runs code during npm install, often a file that did not exist in the previous version.
+2. Non-registry dependencies: a dependency that points to a git commit, a GitHub repository, a URL or a tarball instead of the registry can run its own install scripts.
+3. Obfuscated payloads: very large single-line files, _0x identifiers, long base64 or hex blobs, eval or new Function over decoded strings.
+4. Credential theft: reading environment variables, .npmrc, NPM_TOKEN, GITHUB_TOKEN, cloud credentials or SSH keys; running secret scanners such as trufflehog.
+5. Exfiltration: sending data to unknown hosts, webhooks (webhook.site, Discord) or raw IP addresses.
+6. Self-propagation: using stolen tokens to npm publish other packages, or calling the GitHub API to create repositories or workflows.
+7. Runtime download: fetching and running extra runtimes or binaries (for example Bun, or curl piped to sh).
+8. Dependency confusion and typosquatting: new packages whose names imitate internal or popular packages, often with a very high version such as 99.x and an install script that contacts a remote host.
+
+Legitimate packages also do some of these things. Do not flag them on that alone:
+- Native modules and developer tools (esbuild, sharp, bcrypt, electron, puppeteer, prisma) use install scripts to compile code or download platform binaries from their official hosts.
+- Minified bundles in dist/ are normal: minified is not the same as obfuscated.
+- Reading process.env for configuration is normal; collecting tokens and sending them elsewhere is not.
+Give the most weight to what changed compared with the previous version.

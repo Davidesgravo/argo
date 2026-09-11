@@ -1,0 +1,6 @@
+Decide whether the npm package version described by the dossier below is malicious.
+
+{instructions}
+
+DOSSIER:
+{dossier}

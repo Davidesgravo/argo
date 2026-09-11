@@ -1,0 +1,12 @@
+{taxonomy}
+
+The most similar past cases retrieved from the attack history (with their true labels):
+
+{examples}
+
+Decide whether the npm package version described by the dossier below is malicious.
+
+{instructions}
+
+DOSSIER:
+{dossier}

@@ -1,0 +1,12 @@
+{taxonomy}
+
+Labelled examples from past cases:
+
+{examples}
+
+Decide whether the npm package version described by the dossier below is malicious.
+
+{instructions}
+
+DOSSIER:
+{dossier}
