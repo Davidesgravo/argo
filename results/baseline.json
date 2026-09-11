@@ -1,0 +1,17 @@
+{
+  "threshold": 0,
+  "weights": {
+    "lifecycle_changed": 2.0,
+    "non_registry_dep": 3.0,
+    "outside_files": 1.5,
+    "target_obfuscated": 3.0,
+    "runtime_download": 2.0,
+    "propagation": 2.0,
+    "credentials": 1.5,
+    "exec": 1.0,
+    "obfuscation": 1.0,
+    "network": 0.5
+  },
+  "n_history": 60,
+  "f1_history": 0.9091
+}
