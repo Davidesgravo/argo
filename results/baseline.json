@@ -13,8 +13,8 @@
     "network": 0.5
   },
   "n_history": 60,
-  "f1_history": 0.7561,
-  "recall_history": 0.62,
+  "f1_history": 0.7407,
+  "recall_history": 0.6,
   "fpr_history": 0.1,
-  "youden_history": 0.52
+  "youden_history": 0.5
 }
