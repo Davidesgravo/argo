@@ -38,7 +38,7 @@ LLM_OPTIONS: dict[str, float | int] = {
 }
 RETRY_NUM_PREDICT = 600
 MODELS = ["qwen2.5-coder:7b", "qwen3:4b", "gemma3:4b", "llama3.2:3b"]
-CONTROL_MODEL: str | None = None  # chosen in Task 17
-THINKING_MODELS = {"qwen3:4b"}
+CONTROL_MODEL: str | None = "granite4.2:8b"  # chosen in Task 17
+THINKING_MODELS = {"qwen3:4b", "granite4.2:8b"}
 EMBED_MODEL = "nomic-embed-text"
 PROMPT_IDS = ["p0", "p1", "p2", "p3"]

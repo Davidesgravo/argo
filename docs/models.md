@@ -7,8 +7,13 @@
 | qwen3:4b | 359d7dd4bcda | 2025-04 (29/04/2025) | non dichiarato | [Qwen Team blog — Qwen3: Think Deeper, Act Faster, 29/04/2025](https://qwenlm.github.io/blog/qwen3/); [Qwen3-4B — Hugging Face](https://huggingface.co/Qwen/Qwen3-4B) |
 | qwen2.5-coder:7b | dae161e27b0e | 2024-09 (19/09/2024) | non dichiarato | [Qwen Team blog — Qwen2.5-Coder: Code More, Learn More!, 19/09/2024](https://qwenlm.github.io/blog/qwen2.5-coder/); [Qwen2.5-Coder-7B-Instruct — Hugging Face](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct) |
 | nomic-embed-text | 0a109f422b47 | — | — (embedding) | [ollama.com/library/nomic-embed-text](https://ollama.com/library/nomic-embed-text); [Introducing Nomic Embed — Nomic AI blog, 01/02/2024](https://home.nomic.ai/blog/posts/local-nomic-embed) |
+| granite4.2:8b (CONTROL_MODEL) | f586c02fdecd | 2026-08 (25/08/2026) | non dichiarato (post-training su ~7.2M esempi di catene di ragionamento/agentic, cutoff dei dati di pre-training non dichiarato esplicitamente) | [IBM Research blog — Granite 4.2 brings native reasoning to enterprise agents, 25/08/2026](https://research.ibm.com/blog/introducing-granite-4-2); [ibm-granite/granite-4.2-8b — Hugging Face](https://huggingface.co/ibm-granite/granite-4.2-8b); [ollama.com/library/granite4.2](https://ollama.com/library/granite4.2) |
 
 Nessun modello in MODELS è rilasciato dopo il 2025-09-01.
+
+## Modello di controllo per la contaminazione (Task 17)
+
+`granite4.2:8b` è stato scelto come **CONTROL_MODEL**: rilasciato il 25/08/2026 (dopo la W2 di Shai-Hulud, 21-30/11/2025, e dopo il cutoff storico/test del 01/01/2025), quindi non può avere "visto" durante il pre-training/post-training le wave W1/W2/W3 di Shai-Hulud né i pacchetti npm del corpus di test. È disponibile su Ollama (`granite4.2:8b`, 5.3 GB, adatto a 16 GB in Q4), pesi aperti (licenza Apache 2.0, IBM), 8B parametri. È un modello "thinking" con toggle `think`/`enable_thinking` (default: thinking attivo); è stato verificato che Ollama accetta `"think": false` per questo modello con una chiamata `curl` analoga a quella del setup M0 (risposta JSON valida, nessun campo di pensiero nell'output). Aggiunto a `THINKING_MODELS` in `argo/config.py`.
 
 ## Note sulle fonti
 

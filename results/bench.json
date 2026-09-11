@@ -1,0 +1,62 @@
+{
+  "qwen2.5-coder:7b|p1": {
+    "mean_s": 9.61,
+    "median_s": 9.61,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "qwen2.5-coder:7b|p3": {
+    "mean_s": 12.44,
+    "median_s": 12.11,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "qwen3:4b|p1": {
+    "mean_s": 7.54,
+    "median_s": 6.35,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "qwen3:4b|p3": {
+    "mean_s": 9.59,
+    "median_s": 8.52,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "gemma3:4b|p1": {
+    "mean_s": 10.52,
+    "median_s": 7.96,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "gemma3:4b|p3": {
+    "mean_s": 16.18,
+    "median_s": 15.74,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "llama3.2:3b|p1": {
+    "mean_s": 9.49,
+    "median_s": 6.67,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "llama3.2:3b|p3": {
+    "mean_s": 7.48,
+    "median_s": 6.75,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "granite4.2:8b|p1": {
+    "mean_s": 21.25,
+    "median_s": 15.8,
+    "invalid_rate": 0.0,
+    "n": 10
+  },
+  "granite4.2:8b|p3": {
+    "mean_s": 62.29,
+    "median_s": 35.55,
+    "invalid_rate": 0.0,
+    "n": 10
+  }
+}
