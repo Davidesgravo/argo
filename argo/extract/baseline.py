@@ -48,6 +48,18 @@ def f1_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
     return 0.0 if tp == 0 else 2 * tp / (2 * tp + fp + fn)
 
 
+def youden_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
+    tp = sum(s >= t and y for s, y in zip(scores, labels, strict=True))
+    fp = sum(s >= t and not y for s, y in zip(scores, labels, strict=True))
+    fn = sum(s < t and y for s, y in zip(scores, labels, strict=True))
+    tn = sum(s < t and not y for s, y in zip(scores, labels, strict=True))
+    recall = 0.0 if tp + fn == 0 else tp / (tp + fn)
+    fpr = 0.0 if fp + tn == 0 else fp / (fp + tn)
+    return recall - fpr
+
+
 def calibrate(scores: Sequence[float], labels: Sequence[bool]) -> float:
+    if not any(labels) or all(labels):  # no positives or no negatives: J is undefined
+        return max(scores)
     candidates = sorted(set(scores), reverse=True)  # higher first → wins ties
-    return max(candidates, key=lambda t: f1_at(scores, labels, t))
+    return max(candidates, key=lambda t: youden_at(scores, labels, t))
