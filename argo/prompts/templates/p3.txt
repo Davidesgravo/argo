@@ -1,6 +1,6 @@
 {taxonomy}
 
-The most similar past cases retrieved from the attack history (with their true labels):
+The 2 closest malicious and the 2 closest benign past cases from the attack history, with their true labels:
 
 {examples}
 

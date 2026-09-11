@@ -13,9 +13,9 @@ FEWSHOT_PATH = DATA_DIR / "fewshot.json"
 MAX_EVIDENCE = 4
 _TECHNIQUE_BY_FEATURE: tuple[tuple[str, Technique], ...] = (
     ("non_registry_dep", "lifecycle_script"),
+    ("target_obfuscated", "obfuscated_payload"),
     ("propagation", "self_propagation"),
     ("credentials", "credential_theft"),
-    ("target_obfuscated", "obfuscated_payload"),
     ("runtime_download", "lifecycle_script"),
     ("network", "exfiltration"),
     ("lifecycle_changed", "lifecycle_script"),

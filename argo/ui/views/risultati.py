@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -51,6 +52,16 @@ def _predictions(key: tuple[int, float]) -> pd.DataFrame:
     return load_predictions(RUNS_DIR)
 
 
+def predictions_or_error(
+    load: Callable[[], pd.DataFrame],
+) -> tuple[pd.DataFrame | None, str | None]:
+    """The predictions, or an Italian message when the integrity checks refuse them."""
+    try:
+        return load(), None
+    except ValueError as e:
+        return None, f"Predizioni non coerenti, dettaglio non disponibile: {e}"
+
+
 def render() -> None:
     st.title("Risultati")
     path = RESULTS_DIR / "metrics.csv"
@@ -74,7 +85,10 @@ def render() -> None:
         st.pyplot(fig)
         plt.close(fig)
 
-    preds = _predictions(_predictions_key(RUNS_DIR))
+    preds, error = predictions_or_error(lambda: _predictions(_predictions_key(RUNS_DIR)))
+    if preds is None:
+        st.error(error)
+        return
     test = [s for s in corpus if s.split == "test"]
     rq3 = rq3_table(preds, test, base_run=run)  # base rates from the selected run
     if not rq3.empty and rq3.recall_grown.notna().any():

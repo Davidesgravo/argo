@@ -134,12 +134,15 @@ class Predictor:
         think = False if model in THINKING_MODELS else None
         schema = Verdict.model_json_schema()
         res = self.client.chat(model, rp.system, rp.user, schema, options, think)
-        attempts, latency, t_out = 1, res.latency_s, res.tokens_out
+        attempts, latency, t_in, t_out = 1, res.latency_s, res.tokens_in, res.tokens_out
         output = _parse(res.content)
         if output is None:
             options["num_predict"] = RETRY_NUM_PREDICT
             res = self.client.chat(model, rp.system, rp.user, schema, options, think)
-            attempts, latency, t_out = 2, latency + res.latency_s, t_out + res.tokens_out
+            # the retry re-sends the same prompt: keep the largest prompt count (Ollama may
+            # report only the KV-cache miss on an identical retry), sum the generated tokens
+            attempts, latency = 2, latency + res.latency_s
+            t_in, t_out = max(t_in, res.tokens_in), t_out + res.tokens_out
             output = _parse(res.content)
         return Prediction(
             run_id=run_id,
@@ -161,7 +164,7 @@ class Predictor:
             valid=output is not None,
             output=output,
             latency_s=round(latency, 3),
-            tokens_in=res.tokens_in,  # prompt of the final attempt (a retry re-sends it)
+            tokens_in=t_in,
             tokens_out=t_out,
             timestamp=datetime.now(UTC).isoformat(),
         )
@@ -173,7 +176,9 @@ def completed_keys(pred_path: Path) -> set[tuple[str, str, str, str]]:
     # raising, letting a resumed run recompute that one job instead of crashing.
     if not pred_path.exists():
         return set()
-    lines = [line for line in pred_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # split on "\n" only: str.splitlines() also breaks on U+2028, form feeds, etc., which
+    # json.dumps(ensure_ascii=False) leaves unescaped inside string values
+    lines = [line for line in pred_path.read_text(encoding="utf-8").split("\n") if line.strip()]
     keys: set[tuple[str, str, str, str]] = set()
     for i, line in enumerate(lines):
         try:

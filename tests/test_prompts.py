@@ -6,7 +6,7 @@ import pytest
 from argo.extract.dossier import build_dossier
 from argo.prompts.fewshot import auto_answer, build_fewshot, infer_technique, select_fewshot
 from argo.prompts.render import TEMPLATE_DIR, Example, compress_dossier, render
-from argo.schema import Dossier, Hit, Sample
+from argo.schema import Dossier, FileProfile, Hit, Sample
 from tests.helpers import make_pkg, pkg_json
 
 DOSSIER = "PACKAGE: x@1\n## 1. vectors {weird braces}\n## 4. File changes\n+ a.js"
@@ -62,6 +62,14 @@ def test_examples_required_for_p2_p3():
     assert "label: MALICIOUS" in render("p3", DOSSIER, ex).user
 
 
+def test_p3_describes_the_balanced_retrieval():
+    user = render("p3", DOSSIER, [Example("h@1", "malicious", "PACKAGE: h@1")]).user
+    assert (
+        "the 2 closest malicious and the 2 closest benign past cases from the attack history, "
+        "with their true labels" in user.lower()
+    )
+
+
 def test_hash_stable_and_p3_hash_ignores_neighbors():
     a = render("p3", DOSSIER, [Example("a", "benign", "x")])
     b = render("p3", "other", [Example("b", "malicious", "y")])
@@ -89,6 +97,24 @@ def test_infer_technique_and_auto_answer():
     assert infer_technique(d, "benign") == "none"
     ans = auto_answer(d, "malicious")
     assert ans.verdict == "malicious" and ans.evidence and 0 <= ans.confidence <= 1
+
+
+def test_obfuscated_target_outranks_propagation():
+    obf = FileProfile(
+        path="i.js",
+        size=10,
+        lines=1,
+        avg_line_len=10.0,
+        max_line_len=10,
+        entropy=5.0,
+        hex_identifiers=100,
+        long_encoded_strings=0,
+        minified=True,
+        obfuscated=True,
+        binary=False,
+    )
+    d = _dz("x@1", 10, POST, True, ["propagation"]).model_copy(update={"target_profiles": [obf]})
+    assert infer_technique(d, "malicious") == "obfuscated_payload"
 
 
 def _s(name, label, sub, split="history", prev="0", version="1"):

@@ -211,7 +211,7 @@ Totale ~1.930 inferenze. Stima, da verificare con `argo bench`: **4-5 ore**, ese
 run_id, sample_id, model, model_digest, prompt_id, prompt_hash, rag_index | null,
 rag_neighbors | null, rag_neighbor_labels | null, extractor_version, temperature, seed,
 num_ctx, num_predict, attempts, raw_output, valid, evidence, reasoning, technique, verdict,
-confidence, latency_s (somma dei tentativi), tokens_in (ultimo tentativo),
+confidence, latency_s (somma dei tentativi), tokens_in (massimo sui tentativi),
 tokens_out (somma dei tentativi), timestamp
 ```
 

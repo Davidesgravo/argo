@@ -331,6 +331,25 @@ def test_changed_fingerprint_without_predictions_starts_over(tmp_path):
     assert fp["corpus_sha256"] == hashlib.sha256(b"rebuilt corpus").hexdigest()
 
 
+def test_completed_keys_splits_on_newline_only(tmp_path):
+    path = tmp_path / "predictions.jsonl"
+    a = {"sample_id": "a", "model": "m", "prompt_id": "p0", "raw_output": "x\u2028y\x0cz"}
+    b = {"sample_id": "b", "model": "m", "prompt_id": "p0"}
+    path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in (a, b)))
+    assert completed_keys(path) == {("a", "m", "p0", ""), ("b", "m", "p0", "")}
+
+
+def test_tokens_in_is_the_max_over_attempts():
+    class CachedRetry(FakeClient):
+        def chat(self, model, system, user, schema, options, think=None):
+            self.calls.append(options)
+            # the retry re-sends the same prompt; Ollama may report only the KV-cache miss
+            return ChatResult("{bad", 100 if len(self.calls) == 1 else 5, 10, 0.5)
+
+    p = Predictor(CachedRetry([]), fewshot=[]).predict("r", "a", _d("a"), "m", "p0", None)
+    assert (p.attempts, p.tokens_in, p.tokens_out) == (2, 100, 20)
+
+
 def test_completed_keys_skips_truncated_last_line(tmp_path):
     path = tmp_path / "predictions.jsonl"
     good = {"sample_id": "a", "model": "m", "prompt_id": "p0", "rag_index": None}

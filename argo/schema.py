@@ -124,6 +124,6 @@ class Prediction(BaseModel):
     valid: bool
     output: Verdict | None
     latency_s: float  # summed over attempts
-    tokens_in: int  # prompt tokens of the final attempt
+    tokens_in: int  # prompt tokens, max over attempts
     tokens_out: int  # summed over attempts
     timestamp: str
