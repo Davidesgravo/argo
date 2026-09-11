@@ -6,6 +6,7 @@ import pytest
 from argo.cli import build_parser
 from argo.eval.report import (
     df_to_markdown,
+    holm,
     load_predictions,
     mcnemar_table,
     metrics_table,
@@ -91,6 +92,22 @@ def test_mcnemar_table():
     t = mcnemar_table(_preds(), SAMPLES)
     row = t[(t.a == "p0") & (t.b == "p1")].iloc[0]
     assert (row.b_count, row.c_count) == (0, 3)
+    assert len(t) == 3  # p0-p1, p1-p3, p0-p3
+    assert list(t.p_holm) == pytest.approx(holm(list(t.p_value)))
+    assert (t.p_holm >= t.p_value).all()
+
+
+def test_holm_known_values():
+    assert holm([0.01, 0.04, 0.03, 0.005]) == pytest.approx([0.03, 0.06, 0.06, 0.02])
+    assert holm([0.5, 0.6]) == pytest.approx([1.0, 1.0])
+    assert holm([]) == []
+
+
+def test_metrics_table_tokens_out_mean():
+    preds = _preds()
+    preds.loc[preds.prompt_id == "p1", "tokens_out"] = [10, 20, 30, 40]
+    t = metrics_table(preds, SAMPLES)
+    assert t[(t.prompt_id == "p1") & (t.scope == "all")].iloc[0].tokens_out_mean == 25.0
 
 
 def _rq3_row(preds, **kwargs):

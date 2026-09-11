@@ -161,6 +161,7 @@ def _group_rows(g: pd.DataFrame, by_id: dict[str, Sample]) -> list[dict[str, Any
         row["latency_mean"] = float(sub.latency_s.mean())
         row["latency_median"] = float(sub.latency_s.median())
         row["tokens_in_mean"] = float(sub.tokens_in.mean())
+        row["tokens_out_mean"] = float(sub.tokens_out.mean())
         rows.append(row)
     return rows
 
@@ -178,6 +179,17 @@ def metrics_table(preds: pd.DataFrame, samples: Sequence[Sample]) -> pd.DataFram
 
 def _correct(df: pd.DataFrame, by_id: dict[str, Sample]) -> pd.Series:
     return df.apply(lambda r: r.verdict == by_id[r.sample_id].label, axis=1)
+
+
+def holm(pvalues: Sequence[float]) -> list[float]:
+    """Holm-Bonferroni adjusted p-values, in the input order."""
+    m = len(pvalues)
+    adjusted = [0.0] * m
+    running = 0.0
+    for rank, i in enumerate(sorted(range(m), key=lambda i: pvalues[i])):
+        running = max(running, min(1.0, (m - rank) * pvalues[i]))
+        adjusted[i] = running
+    return adjusted
 
 
 def mcnemar_table(
@@ -207,7 +219,10 @@ def mcnemar_table(
                         "p_value": p,
                     }
                 )
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+    if not table.empty:  # Holm over every comparison in the table
+        table["p_holm"] = holm(list(table.p_value))
+    return table
 
 
 GROWN_INDEX = {"shai_hulud_w2": "storico_w1", "shai_hulud_w3": "storico_w1w2"}
