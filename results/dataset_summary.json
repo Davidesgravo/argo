@@ -1,0 +1,21 @@
+{
+  "datadog_commit": "31a2ba215bcf891cfc751c3cb769e272bc6158c5",
+  "seed": 2026,
+  "built_at": "2026-09-11T10:49:32.354998+00:00",
+  "counts": {
+    "history/benigno_difficile": 5,
+    "history/benigno_popolare": 5,
+    "history/compromesso": 4,
+    "history/nato_malevolo": 36,
+    "history/shai_hulud_w1": 5,
+    "history/shai_hulud_w2": 5,
+    "test/benigno_difficile": 20,
+    "test/benigno_popolare": 20,
+    "test/compromesso": 12,
+    "test/nato_malevolo": 28,
+    "test/pulito_accoppiato": 14,
+    "test/shai_hulud_w1": 5,
+    "test/shai_hulud_w2": 5,
+    "test/shai_hulud_w3": 5
+  }
+}
