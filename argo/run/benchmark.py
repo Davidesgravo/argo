@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import statistics
 from collections.abc import Sequence
 from pathlib import Path
@@ -17,6 +18,13 @@ def bench_samples(samples: Sequence[Sample], n: int) -> list[Sample]:
     ben = [s for s in test if s.label == "benign"]
     mixed = [s for pair in zip(mal, ben, strict=False) for s in pair]
     return mixed[:n]
+
+
+def _write_atomic(path: Path, data: dict[str, dict[str, float]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
 
 
 def bench(
@@ -48,8 +56,7 @@ def bench(
                 "n": len(preds),
             }
             print(f"{model} {p}: {data[f'{model}|{p}']}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(data, indent=2))
+            _write_atomic(out_path, data)
     return data
 
 

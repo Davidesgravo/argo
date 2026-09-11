@@ -1,6 +1,10 @@
-from argo.run.benchmark import bench_samples, estimate_seconds, fmt_duration
+import json
+
+import pytest
+
+from argo.run.benchmark import bench, bench_samples, estimate_seconds, fmt_duration
 from argo.run.runner import Job
-from argo.schema import Sample
+from argo.schema import Dossier, Sample
 
 
 def _s(i, label, split="test"):
@@ -44,3 +48,54 @@ def test_estimate():
 
 def test_fmt_duration():
     assert fmt_duration(7500) == "2h 05m" and fmt_duration(59) == "0h 01m"
+
+
+class _FakePrediction:
+    def __init__(self, latency_s, valid=True):
+        self.latency_s = latency_s
+        self.valid = valid
+
+
+class _FailingPredictor:
+    """Succeeds for model "a", raises as soon as it is asked to predict for model "b"."""
+
+    def predict(self, run_id, sample_id, dossier, model, prompt_id, rag_index):
+        if model == "b":
+            raise RuntimeError("boom")
+        return _FakePrediction(1.0)
+
+
+def test_bench_persists_after_each_model_and_prompt(tmp_path):
+    samples = [_s("m1", "malicious"), _s("b1", "benign")]
+    dossiers = {
+        "m1": Dossier(
+            sample_id="m1",
+            extractor_version="1",
+            text="x",
+            lifecycle={},
+            lifecycle_changed=False,
+            dep_changes=[],
+            outside_files=[],
+            target_profiles=[],
+            hits=[],
+            changes=[],
+            truncated=False,
+            est_tokens=1,
+        )
+    }
+    out_path = tmp_path / "bench.json"
+
+    with pytest.raises(RuntimeError):
+        bench(
+            ["a", "b"],
+            samples,
+            dossiers,
+            _FailingPredictor(),
+            n=1,
+            prompts=("p1",),
+            out_path=out_path,
+        )
+
+    data = json.loads(out_path.read_text())
+    assert "a|p1" in data
+    assert "b|p1" not in data
