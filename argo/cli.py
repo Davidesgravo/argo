@@ -160,7 +160,7 @@ def _run(args: argparse.Namespace) -> int:
     from argo.dataset.build import load_corpus
     from argo.extract.build import load_dossiers
     from argo.run.benchmark import estimate_seconds, fmt_duration
-    from argo.run.runner import RunConfig, plan_jobs, run
+    from argo.run.runner import RunConfig, RunMismatchError, plan_jobs, run
 
     cfg = RunConfig(
         run_id=args.run_id,
@@ -180,7 +180,11 @@ def _run(args: argparse.Namespace) -> int:
     )
     if not args.yes and input("Proceed? [y/N] ").strip().lower() != "y":
         return 1
-    run(cfg, corpus, dossiers, _predictor())
+    try:
+        run(cfg, corpus, dossiers, _predictor())
+    except RunMismatchError as e:
+        print(e)
+        return 1
     return 0
 
 

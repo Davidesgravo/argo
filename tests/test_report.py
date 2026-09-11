@@ -1,6 +1,15 @@
-import pandas as pd
+import json
 
-from argo.eval.report import df_to_markdown, mcnemar_table, metrics_table, rq3_table
+import pandas as pd
+import pytest
+
+from argo.eval.report import (
+    df_to_markdown,
+    load_predictions,
+    mcnemar_table,
+    metrics_table,
+    rq3_table,
+)
 from argo.schema import Sample
 
 
@@ -37,6 +46,8 @@ def _row(run, model, prompt, sid, verdict, rag=None):
         "model": model,
         "prompt_id": prompt,
         "rag_index": rag,
+        "prompt_hash": f"hash-{prompt}",
+        "extractor_version": "1",
         "valid": verdict is not None,
         "verdict": verdict,
         "technique": "none",
@@ -94,3 +105,46 @@ def test_rq3_table():
 def test_markdown():
     md = df_to_markdown(pd.DataFrame({"a": [1.23456], "b": ["x"]}))
     assert md.splitlines()[0] == "| a | b |" and "1.235" in md
+
+
+def test_metrics_table_rejects_duplicate_predictions():
+    preds = _preds()
+    with pytest.raises(ValueError, match="duplicat"):
+        metrics_table(pd.concat([preds, preds.iloc[[0]]], ignore_index=True), SAMPLES)
+
+
+@pytest.mark.parametrize("column", ["prompt_hash", "extractor_version"])
+def test_metrics_table_rejects_mixed_provenance_in_a_group(column):
+    preds = _preds()
+    preds.loc[0, column] = "other"
+    with pytest.raises(ValueError, match=column):
+        metrics_table(preds, SAMPLES)
+
+
+def _record(sid, rag=None):
+    return {
+        "run_id": "r",
+        "sample_id": sid,
+        "model": "m",
+        "prompt_id": "p3" if rag else "p0",
+        "rag_index": rag,
+        "prompt_hash": "h",
+        "extractor_version": "1",
+        "valid": True,
+        "output": {"verdict": "benign"},
+        "latency_s": 1.0,
+        "tokens_in": 1,
+        "tokens_out": 1,
+    }
+
+
+def test_load_predictions_rejects_duplicate_keys(tmp_path):
+    run_dir = tmp_path / "r"
+    run_dir.mkdir()
+    lines = [_record("m1"), _record("m1", "storico_base"), _record("b1")]
+    (run_dir / "predictions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines))
+    assert len(load_predictions(tmp_path)) == 3  # same sample, different rag_index: fine
+    with (run_dir / "predictions.jsonl").open("a") as f:
+        f.write(json.dumps(_record("m1")) + "\n")
+    with pytest.raises(ValueError, match="duplicat"):
+        load_predictions(tmp_path)

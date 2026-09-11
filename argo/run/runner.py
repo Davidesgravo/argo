@@ -1,23 +1,30 @@
+import hashlib
 import json
+import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
 from argo.config import (
+    CORPUS_PATH,
     EMBED_MODEL,
+    EXTRACTOR_VERSION,
     LLM_OPTIONS,
     RAG_DIR,
     RETRY_NUM_PREDICT,
+    ROOT,
     RUNS_DIR,
     THINKING_MODELS,
 )
 from argo.jsonl import append_jsonl
 from argo.llm.ollama import LLMClient
+from argo.prompts.fewshot import FEWSHOT_PATH
 from argo.prompts.rag import QUERY_PREFIX, QueryCache, RagIndex, ollama_embedder
-from argo.prompts.render import Example, compress_dossier, render
+from argo.prompts.render import TEMPLATE_DIR, Example, compress_dossier, render
 from argo.schema import Dossier, Prediction, Sample, Verdict
 
 _RQ3_INDEX = {"shai_hulud_w2": "storico_w1", "shai_hulud_w3": "storico_w1w2"}
@@ -212,6 +219,64 @@ def repair_tail(pred_path: Path, tail_path: Path) -> None:
             f.write(b"\n")
 
 
+class RunMismatchError(RuntimeError):
+    pass
+
+
+def _sha256(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def _git_commit() -> str | None:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None
+
+
+def run_fingerprint(
+    predictor: Predictor, jobs: Sequence[Job], fewshot_path: Path, corpus_path: Path
+) -> dict[str, Any]:
+    """Everything outside the prediction records that determines them (run provenance)."""
+    indexes = sorted({j.rag_index for j in jobs if j.rag_index})
+    return {
+        "templates": {p.name: _sha256(p) for p in sorted(TEMPLATE_DIR.iterdir()) if p.is_file()},
+        "fewshot_sha256": _sha256(fewshot_path),
+        "extractor_version": EXTRACTOR_VERSION,
+        "corpus_sha256": _sha256(corpus_path),
+        "rag_index_files": {
+            f"{name}{ext}": _sha256(predictor.rag_dir / f"{name}{ext}")
+            for name in indexes
+            for ext in (".json", ".npy")
+        },
+        "embed_model": EMBED_MODEL,
+        "embed_model_digest": predictor.client.model_digest(EMBED_MODEL) if indexes else None,
+        "ollama_version": predictor.client.version(),
+        "git_commit": _git_commit(),
+    }
+
+
+def _check_resume(run_id: str, cfg_path: Path, pred_path: Path, fp: dict[str, Any]) -> None:
+    if not cfg_path.exists() or not pred_path.exists() or pred_path.stat().st_size == 0:
+        return
+    old = json.loads(cfg_path.read_text()).get("fingerprint") or {}
+    changed = sorted(k for k in fp.keys() | old.keys() if old.get(k) != fp.get(k))
+    if changed:
+        raise RunMismatchError(
+            f"Il run {run_id!r} esiste già ma è stato prodotto in condizioni diverse "
+            f"({', '.join(changed)}). Per non mescolare predizioni vecchie e nuove "
+            "usa un nuovo ID del run."
+        )
+
+
 def run(
     cfg: RunConfig,
     samples: Sequence[Sample],
@@ -219,12 +284,19 @@ def run(
     predictor: Predictor,
     runs_dir: Path = RUNS_DIR,
     log: Callable[[str], None] = print,
+    fewshot_path: Path = FEWSHOT_PATH,
+    corpus_path: Path = CORPUS_PATH,
 ) -> Path:
     out_dir = runs_dir / cfg.run_id
-    out_dir.mkdir(parents=True, exist_ok=True)
     pred_path = out_dir / "predictions.jsonl"
+    cfg_path = out_dir / "config.json"
     jobs = [j for j in plan_jobs(cfg, samples) if j.sample_id in dossiers]
-    (out_dir / "config.json").write_text(json.dumps({**asdict(cfg), "n_jobs": len(jobs)}, indent=2))
+    fp = run_fingerprint(predictor, jobs, fewshot_path, corpus_path)
+    _check_resume(cfg.run_id, cfg_path, pred_path, fp)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        json.dumps({**asdict(cfg), "n_jobs": len(jobs), "fingerprint": fp}, indent=2)
+    )
     repair_tail(pred_path, out_dir / "truncated_tail.txt")
     done = completed_keys(pred_path)
     todo = [j for j in jobs if j.key not in done]

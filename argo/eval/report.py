@@ -27,12 +27,15 @@ SUBGROUPS = (
 )
 SCOPES: tuple[str, ...] = ("all", "shai_hulud", *SUBGROUPS)
 GROUP_KEYS = ["run_id", "model", "prompt_id", "rag_index"]
+PRED_KEY = ["run_id", "sample_id", "model", "prompt_id", "rag_index"]
 COLUMNS = [
     "run_id",
     "sample_id",
     "model",
     "prompt_id",
     "rag_index",
+    "prompt_hash",
+    "extractor_version",
     "valid",
     "verdict",
     "technique",
@@ -61,6 +64,8 @@ def load_predictions(
                     "model": r["model"],
                     "prompt_id": r["prompt_id"],
                     "rag_index": r.get("rag_index"),
+                    "prompt_hash": r.get("prompt_hash"),
+                    "extractor_version": r.get("extractor_version"),
                     "valid": r["valid"],
                     "verdict": out.get("verdict"),
                     "technique": out.get("technique"),
@@ -72,7 +77,27 @@ def load_predictions(
                     "tokens_out": r["tokens_out"],
                 }
             )
-    return pd.DataFrame(rows, columns=COLUMNS)
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    check_integrity(df)
+    return df
+
+
+def check_integrity(preds: pd.DataFrame) -> None:
+    """Refuse predictions that would silently distort the metrics: a (run, sample, model,
+    prompt, index) key seen twice, or a run/model/prompt/index group that mixes prompt
+    templates or extractor versions (e.g. a resumed run after a rebuild)."""
+    dup = preds[preds.duplicated(PRED_KEY, keep=False)]
+    if not dup.empty:
+        examples = dup[PRED_KEY].drop_duplicates().head(5).to_dict("records")
+        raise ValueError(f"predizioni duplicate ({len(dup)} righe), per esempio: {examples}")
+    for keys, g in preds.groupby(GROUP_KEYS, dropna=False, sort=True):
+        for col in ("prompt_hash", "extractor_version"):
+            if col in g and g[col].nunique(dropna=False) > 1:
+                values = sorted(map(str, g[col].unique()))
+                raise ValueError(
+                    f"il gruppo {dict(zip(GROUP_KEYS, keys, strict=True))} mescola valori "
+                    f"diversi di {col}: {values}. Ripeti il run con un nuovo ID."
+                )
 
 
 def baseline_predictions(
@@ -85,6 +110,8 @@ def baseline_predictions(
             "model": "baseline",
             "prompt_id": "rules",
             "rag_index": None,
+            "prompt_hash": "rules",
+            "extractor_version": dossiers[s.id].extractor_version,
             "valid": True,
             "verdict": "malicious" if score(dossiers[s.id]) >= threshold else "benign",
             "technique": None,
@@ -139,6 +166,7 @@ def _group_rows(g: pd.DataFrame, by_id: dict[str, Sample]) -> list[dict[str, Any
 
 
 def metrics_table(preds: pd.DataFrame, samples: Sequence[Sample]) -> pd.DataFrame:
+    check_integrity(preds)
     by_id = {s.id: s for s in samples}
     preds = preds[preds.sample_id.isin(by_id)]
     rows = []

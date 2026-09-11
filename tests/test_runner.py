@@ -1,9 +1,21 @@
+import hashlib
 import json
 
+import pytest
+
+from argo.config import EMBED_MODEL, EXTRACTOR_VERSION
 from argo.llm.ollama import ChatResult
 from argo.prompts.rag import QUERY_PREFIX, build_index
 from argo.prompts.render import Example
-from argo.run.runner import Predictor, RunConfig, completed_keys, plan_jobs, rq3_index, run
+from argo.run.runner import (
+    Predictor,
+    RunConfig,
+    RunMismatchError,
+    completed_keys,
+    plan_jobs,
+    rq3_index,
+    run,
+)
 from argo.schema import Dossier, Sample, Verdict
 
 GOOD = Verdict(evidence=["x"], reasoning="r", technique="none", verdict="benign", confidence=0.8)
@@ -27,6 +39,9 @@ class FakeClient:
     def embed(self, model, texts):
         self.embed_calls.extend(texts)
         return [[1.0, 0.0, 0.0] for _ in texts]
+
+    def version(self):
+        return "0.0.0-test"
 
 
 def _s(i, sub, split="test", pair=None, label="malicious", history_set=None):
@@ -72,6 +87,23 @@ SAMPLES = [
     _s("w3", "shai_hulud_w3"),
     _s("h", "nato_malevolo", split="history"),
 ]
+
+
+def _run(cfg, samples, client, tmp_path, rag_dir=None):
+    """run() with every input path inside tmp_path (tests never read data/)."""
+    for name in ("corpus.jsonl", "fewshot.json"):
+        if not (tmp_path / name).exists():
+            (tmp_path / name).write_text(name)
+    return run(
+        cfg,
+        samples,
+        {s.id: _d(s.id) for s in SAMPLES},
+        Predictor(client, [], rag_dir=rag_dir or tmp_path / "rag"),
+        tmp_path / "runs",
+        log=lambda _: None,
+        fewshot_path=tmp_path / "fewshot.json",
+        corpus_path=tmp_path / "corpus.jsonl",
+    )
 
 
 def test_rq3_index_follows_pairs():
@@ -133,43 +165,80 @@ def test_p2_uses_fewshot_examples():
 
 def test_run_resumes(tmp_path):
     cfg = RunConfig("r1", ["m"], ["p0"])
-    dossiers = {s.id: _d(s.id) for s in SAMPLES}
     client = FakeClient([GOOD.model_dump_json()])
-    pred = run(cfg, SAMPLES[:2], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    pred = _run(cfg, SAMPLES[:2], client, tmp_path)
     assert len(client.calls) == 2
-    run(cfg, SAMPLES[:3], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    _run(cfg, SAMPLES[:3], client, tmp_path)
     assert len(client.calls) == 3 and len(completed_keys(pred)) == 3
-    assert json.loads((tmp_path / "r1" / "config.json").read_text())["n_jobs"] == 3
+    assert json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["n_jobs"] == 3
 
 
 def test_resume_repairs_truncated_tail(tmp_path):
     cfg = RunConfig("r1", ["m"], ["p0"])
-    dossiers = {s.id: _d(s.id) for s in SAMPLES}
     client = FakeClient([GOOD.model_dump_json()])
-    pred = run(cfg, SAMPLES[:1], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    pred = _run(cfg, SAMPLES[:1], client, tmp_path)
     fragment = '{"run_id": "r1", "sample_id": "w2", "mod'  # killed mid-write
     with pred.open("a") as f:
         f.write(fragment)
 
-    run(cfg, SAMPLES[:2], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    _run(cfg, SAMPLES[:2], client, tmp_path)
 
     records = [json.loads(line) for line in pred.read_text().splitlines()]  # all valid JSON
     assert [r["sample_id"] for r in records] == ["a", "w2"]
     assert pred.read_text().endswith("\n")
-    assert (tmp_path / "r1" / "truncated_tail.txt").read_text() == fragment
+    assert (tmp_path / "runs" / "r1" / "truncated_tail.txt").read_text() == fragment
 
 
 def test_resume_terminates_valid_last_line_without_newline(tmp_path):
     cfg = RunConfig("r1", ["m"], ["p0"])
-    dossiers = {s.id: _d(s.id) for s in SAMPLES}
     client = FakeClient([GOOD.model_dump_json()])
-    pred = run(cfg, SAMPLES[:1], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    pred = _run(cfg, SAMPLES[:1], client, tmp_path)
     pred.write_text(pred.read_text().rstrip("\n"))
 
-    run(cfg, SAMPLES[:2], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    _run(cfg, SAMPLES[:2], client, tmp_path)
 
     assert [json.loads(line)["sample_id"] for line in pred.read_text().splitlines()] == ["a", "w2"]
-    assert not (tmp_path / "r1" / "truncated_tail.txt").exists()
+    assert not (tmp_path / "runs" / "r1" / "truncated_tail.txt").exists()
+
+
+def test_config_records_fingerprint(tmp_path):
+    rag = tmp_path / "rag"
+    history = [_s("h1", "nato_malevolo", split="history", history_set="base")]
+    build_index("storico_base", history, {"h1": _d("h1")}, _hist_embed).save(rag)
+    client = FakeClient([GOOD.model_dump_json()])
+    _run(RunConfig("r1", ["m"], ["p0", "p3"]), SAMPLES[:1], client, tmp_path, rag_dir=rag)
+    fp = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["fingerprint"]
+    assert set(fp["templates"]) >= {"p0.txt", "p3.txt", "taxonomy.txt", "system.txt"}
+    assert fp["fewshot_sha256"] == hashlib.sha256(b"fewshot.json").hexdigest()
+    assert fp["corpus_sha256"] == hashlib.sha256(b"corpus.jsonl").hexdigest()
+    assert fp["extractor_version"] == EXTRACTOR_VERSION
+    assert fp["rag_index_files"] == {
+        name: hashlib.sha256((rag / name).read_bytes()).hexdigest()
+        for name in ("storico_base.json", "storico_base.npy")
+    }
+    assert fp["embed_model"] == EMBED_MODEL and fp["embed_model_digest"] == "sha256:" + EMBED_MODEL
+    assert fp["ollama_version"] == "0.0.0-test" and "git_commit" in fp
+
+
+def test_resume_refuses_changed_fingerprint(tmp_path):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    client = FakeClient([GOOD.model_dump_json()])
+    pred = _run(cfg, SAMPLES[:1], client, tmp_path)
+    before = pred.read_text()
+    (tmp_path / "corpus.jsonl").write_text("rebuilt corpus")
+    with pytest.raises(RunMismatchError, match="nuovo ID"):
+        _run(cfg, SAMPLES[:2], client, tmp_path)
+    assert pred.read_text() == before and len(client.calls) == 1
+
+
+def test_changed_fingerprint_without_predictions_starts_over(tmp_path):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    client = FakeClient([GOOD.model_dump_json()])
+    _run(cfg, SAMPLES[:1], client, tmp_path).unlink()
+    (tmp_path / "corpus.jsonl").write_text("rebuilt corpus")
+    _run(cfg, SAMPLES[:1], client, tmp_path)
+    fp = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["fingerprint"]
+    assert fp["corpus_sha256"] == hashlib.sha256(b"rebuilt corpus").hexdigest()
 
 
 def test_completed_keys_skips_truncated_last_line(tmp_path):
