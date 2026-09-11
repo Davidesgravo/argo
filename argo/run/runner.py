@@ -66,8 +66,8 @@ def plan_jobs(cfg: RunConfig, samples: Sequence[Sample]) -> list[Job]:
         for s in test:
             for p in cfg.prompts:
                 if cfg.mode == "rq3":
-                    idx = rq3_index(s, by_id)
-                    if idx is not None:
+                    idx = rq3_index(s, by_id)  # RQ3 compares retrieval indexes: P3 only
+                    if p == "p3" and idx is not None:
                         jobs.append(Job(s.id, model, p, idx))
                 else:
                     jobs.append(Job(s.id, model, p, cfg.rag_index if p == "p3" else None))

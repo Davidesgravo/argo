@@ -99,6 +99,11 @@ def test_plan_rq3_only_wave_samples():
     }
 
 
+def test_plan_rq3_ignores_non_p3_prompts():
+    jobs = plan_jobs(RunConfig("r", ["m"], ["p0", "p1", "p2", "p3"], mode="rq3"), SAMPLES)
+    assert {j.prompt_id for j in jobs} == {"p3"} and len(jobs) == 3
+
+
 def test_predict_valid_and_thinking_flag():
     client = FakeClient([GOOD.model_dump_json()])
     p = Predictor(client, fewshot=[]).predict("r", "a", _d("a"), "qwen3:4b", "p1", None)
