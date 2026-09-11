@@ -3,11 +3,13 @@ import json
 import pandas as pd
 import pytest
 
+from argo.cli import build_parser
 from argo.eval.report import (
     df_to_markdown,
     load_predictions,
     mcnemar_table,
     metrics_table,
+    report_tables,
     rq3_table,
 )
 from argo.schema import Sample
@@ -91,15 +93,52 @@ def test_mcnemar_table():
     assert (row.b_count, row.c_count) == (0, 3)
 
 
+def _rq3_row(preds, **kwargs):
+    t = rq3_table(preds, SAMPLES, **kwargs)
+    row = t[t.wave == "shai_hulud_w2"].iloc[0]
+    return (row.recall_base, row.recall_grown, row.fpr_pairs_base, row.fpr_pairs_grown)
+
+
 def test_rq3_table():
     t = rq3_table(_preds(), SAMPLES)
     row = t[t.wave == "shai_hulud_w2"].iloc[0]
-    assert (row.recall_base, row.recall_grown, row.fpr_pairs_base, row.fpr_pairs_grown) == (
-        1.0,
-        1.0,
-        0.0,
-        1.0,
-    )
+    assert (row.n_infected, row.n_pairs) == (1, 1) and "n" not in t
+    assert _rq3_row(_preds()) == (1.0, 1.0, 0.0, 1.0)
+
+
+def test_rq3_rates_come_from_the_named_runs_only():
+    extra = [
+        _row("other", "m", "p3", "m2", "benign", "storico_base"),  # another base run
+        _row("main", "m", "p3", "c2", "benign", "storico_w1"),  # grown index outside rq3 run
+    ]
+    preds = pd.concat([_preds(), pd.DataFrame(extra)], ignore_index=True)
+    assert _rq3_row(preds) == (1.0, 1.0, 0.0, 1.0)
+    recall_base, recall_grown, fpr_base, fpr_grown = _rq3_row(preds, base_run="other")
+    assert (recall_base, recall_grown, fpr_grown) == (0.0, 1.0, 1.0) and pd.isna(fpr_base)
+
+
+def test_rq3_invalid_on_clean_pair_counts_as_false_positive():
+    preds = _preds()
+    preds.loc[(preds.run_id == "rq3") & (preds.sample_id == "c2"), "verdict"] = None
+    preds.loc[(preds.run_id == "rq3") & (preds.sample_id == "c2"), "valid"] = False
+    assert _rq3_row(preds)[3] == 1.0
+
+
+def test_report_tables_use_main_run_and_show_rag_index():
+    metrics = metrics_table(_preds(), SAMPLES)
+    tables = report_tables(metrics, mcnemar_table(_preds(), SAMPLES), rq3_table(_preds(), SAMPLES))
+    assert "rag_index" in tables["shai_hulud.md"].columns
+    assert set(tables["shai_hulud.md"].rag_index.dropna()) == {"storico_base", "storico_w1"}
+    assert set(tables["principale.md"].prompt_id) == {"p0", "p1", "p3"}
+    renamed = metrics.assign(run_id=metrics.run_id.replace({"main": "main2"}))
+    tables = report_tables(renamed, pd.DataFrame(), pd.DataFrame(), main_run="main2")
+    assert len(tables["principale.md"]) == 3
+
+
+def test_eval_accepts_run_ids():
+    args = build_parser().parse_args(["eval", "--main-run", "main2", "--rq3-run", "rq3b"])
+    assert (args.main_run, args.rq3_run) == ("main2", "rq3b")
+    assert build_parser().parse_args(["eval"]).main_run == "main"
 
 
 def test_markdown():

@@ -39,9 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     bl_sub.add_parser("calibrate", help="choose the threshold on history").set_defaults(
         func=_baseline_calibrate
     )
-    sub.add_parser("eval", help="metrics, tables and figures into results/").set_defaults(
-        func=_eval
-    )
+    ev = sub.add_parser("eval", help="metrics, tables and figures into results/")
+    ev.add_argument("--main-run", default="main", type=_run_id_type, help="main run id")
+    ev.add_argument("--rq3-run", default="rq3", type=_run_id_type, help="RQ3 run id")
+    ev.set_defaults(func=_eval)
 
     fs = sub.add_parser("fewshot", help="few-shot examples for P2")
     fsb = fs.add_subparsers(dest="fewshot_command", required=True).add_parser(
@@ -105,10 +106,10 @@ def _baseline_calibrate(_: argparse.Namespace) -> int:
     return 0
 
 
-def _eval(_: argparse.Namespace) -> int:
+def _eval(args: argparse.Namespace) -> int:
     from argo.eval.report import write_report
 
-    for p in write_report():
+    for p in write_report(main_run=args.main_run, rq3_run=args.rq3_run):
         print(p)
     return 0
 

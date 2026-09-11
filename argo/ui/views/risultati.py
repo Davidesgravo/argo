@@ -76,7 +76,7 @@ def render() -> None:
 
     preds = _predictions(_predictions_key(RUNS_DIR))
     test = [s for s in corpus if s.split == "test"]
-    rq3 = rq3_table(preds, test)
+    rq3 = rq3_table(preds, test, base_run=run)  # base rates from the selected run
     if not rq3.empty and rq3.recall_grown.notna().any():
         st.subheader("RQ3 · lo storico delle ondate precedenti aiuta?")
         st.dataframe(rq3, hide_index=True)

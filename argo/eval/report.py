@@ -210,29 +210,54 @@ def mcnemar_table(
     return pd.DataFrame(rows)
 
 
-def rq3_table(preds: pd.DataFrame, samples: Sequence[Sample]) -> pd.DataFrame:
+GROWN_INDEX = {"shai_hulud_w2": "storico_w1", "shai_hulud_w3": "storico_w1w2"}
+
+
+def _p3_rate(
+    p3: pd.DataFrame, run_id: str, model: str, index: str, ids: list[str], hit: str
+) -> float:
+    """Share of predictions that are `hit` ("malicious" on infected samples) or, with
+    hit="not_benign", anything but "benign" (an invalid output on a clean pair is a FP)."""
+    sel = p3[
+        (p3.run_id == run_id)
+        & (p3.model == model)
+        & (p3.rag_index == index)
+        & p3.sample_id.isin(ids)
+    ]
+    if sel.empty:
+        return float("nan")
+    ok = sel.verdict != "benign" if hit == "not_benign" else sel.verdict == hit
+    return float(ok.mean())
+
+
+def rq3_table(
+    preds: pd.DataFrame,
+    samples: Sequence[Sample],
+    base_run: str = "main",
+    grown_run: str = "rq3",
+) -> pd.DataFrame:
+    """RQ3: P3 with storico_base (from `base_run`) vs the grown index (from `grown_run`)."""
     by_id = {s.id: s for s in samples}
-    grown_index = {"shai_hulud_w2": "storico_w1", "shai_hulud_w3": "storico_w1w2"}
-    p3 = preds[preds.prompt_id == "p3"]
+    p3 = preds[(preds.prompt_id == "p3") & preds.run_id.isin([base_run, grown_run])]
     rows = []
     for model in sorted(p3.model.unique()):
-        for wave, idx in grown_index.items():
+        for wave, idx in GROWN_INDEX.items():
             infected = [s.id for s in samples if s.subgroup == wave and s.split == "test"]
-            pairs = [s.pair_id for s in (by_id[i] for i in infected) if s.pair_id]
-
-            def rate(ids: list[str], index: str, target: str, m: str = model) -> float:
-                sel = p3[(p3.model == m) & (p3.rag_index == index) & p3.sample_id.isin(ids)]
-                return float((sel.verdict == target).mean()) if len(sel) else float("nan")
-
+            pairs = [p for p in (by_id[i].pair_id for i in infected) if p in by_id]
             rows.append(
                 {
                     "model": model,
                     "wave": wave,
-                    "n": len(infected),
-                    "recall_base": rate(infected, "storico_base", "malicious"),
-                    "recall_grown": rate(infected, idx, "malicious"),
-                    "fpr_pairs_base": rate(pairs, "storico_base", "malicious"),
-                    "fpr_pairs_grown": rate(pairs, idx, "malicious"),
+                    "n_infected": len(infected),
+                    "n_pairs": len(pairs),
+                    "recall_base": _p3_rate(
+                        p3, base_run, model, "storico_base", infected, "malicious"
+                    ),
+                    "recall_grown": _p3_rate(p3, grown_run, model, idx, infected, "malicious"),
+                    "fpr_pairs_base": _p3_rate(
+                        p3, base_run, model, "storico_base", pairs, "not_benign"
+                    ),
+                    "fpr_pairs_grown": _p3_rate(p3, grown_run, model, idx, pairs, "not_benign"),
                 }
             )
     return pd.DataFrame(rows)
@@ -311,7 +336,45 @@ def rq3_figure(rq3: pd.DataFrame) -> plt.Figure:
     return fig
 
 
-def write_report(results_dir: Path = RESULTS_DIR, runs_dir: Path = RUNS_DIR) -> list[Path]:
+MAIN_COLS = [
+    "model",
+    "prompt_id",
+    "n",
+    "recall",
+    "recall_lo",
+    "recall_hi",
+    "fpr",
+    "fpr_lo",
+    "fpr_hi",
+    "f1",
+    "f1_lo",
+    "f1_hi",
+    "invalid",
+    "latency_mean",
+]
+
+
+def report_tables(
+    metrics: pd.DataFrame, mcn: pd.DataFrame, rq3: pd.DataFrame, main_run: str = "main"
+) -> dict[str, pd.DataFrame]:
+    return {
+        "principale.md": metrics[
+            (metrics.scope == "all") & metrics.run_id.isin([main_run, "baseline"])
+        ][MAIN_COLS],
+        "shai_hulud.md": metrics[metrics.scope == "shai_hulud"][
+            ["run_id", "model", "prompt_id", "rag_index", *MAIN_COLS[2:]]
+        ],
+        "mcnemar.md": mcn,
+        "rq3.md": rq3,
+    }
+
+
+def write_report(
+    results_dir: Path = RESULTS_DIR,
+    runs_dir: Path = RUNS_DIR,
+    main_run: str = "main",
+    rq3_run: str = "rq3",
+) -> list[Path]:
     from argo.dataset.build import load_corpus
     from argo.extract.build import load_baseline, load_dossiers
 
@@ -325,43 +388,20 @@ def write_report(results_dir: Path = RESULTS_DIR, runs_dir: Path = RUNS_DIR) -> 
         ignore_index=True,
     )
     metrics = metrics_table(preds, test)
-    mcn = mcnemar_table(preds, test)
-    rq3 = rq3_table(preds, test)
+    mcn = mcnemar_table(preds, test, run_id=main_run)
+    rq3 = rq3_table(preds, test, base_run=main_run, grown_run=rq3_run)
     tables, figures = results_dir / "tables", results_dir / "figures"
     tables.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
     written = []
     metrics.to_csv(results_dir / "metrics.csv", index=False)
     written.append(results_dir / "metrics.csv")
-    main_cols = [
-        "model",
-        "prompt_id",
-        "n",
-        "recall",
-        "recall_lo",
-        "recall_hi",
-        "fpr",
-        "fpr_lo",
-        "fpr_hi",
-        "f1",
-        "f1_lo",
-        "f1_hi",
-        "invalid",
-        "latency_mean",
-    ]
-    for name, df in {
-        "principale.md": metrics[
-            (metrics.scope == "all") & metrics.run_id.isin(["main", "baseline"])
-        ][main_cols],
-        "shai_hulud.md": metrics[metrics.scope == "shai_hulud"][["run_id", *main_cols]],
-        "mcnemar.md": mcn,
-        "rq3.md": rq3,
-    }.items():
+    for name, df in report_tables(metrics, mcn, rq3, main_run).items():
         (tables / name).write_text(df_to_markdown(df) + "\n")
         written.append(tables / name)
     for name, fig in {
-        "heatmap_f1.png": heatmap_figure(metrics),
-        "fpr.png": fpr_figure(metrics),
+        "heatmap_f1.png": heatmap_figure(metrics, main_run),
+        "fpr.png": fpr_figure(metrics, main_run),
         "rq3.png": rq3_figure(rq3),
     }.items():
         fig.savefig(figures / name, dpi=200)
