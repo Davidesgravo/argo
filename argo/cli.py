@@ -57,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--limit", type=int, default=None)
     r.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     r.set_defaults(func=_run)
+
+    sub.add_parser("ui", help="start the Streamlit interface").set_defaults(func=_ui)
     return parser
 
 
@@ -170,6 +172,15 @@ def _run(args: argparse.Namespace) -> int:
         return 1
     run(cfg, corpus, dossiers, _predictor())
     return 0
+
+
+def _ui(_: argparse.Namespace) -> int:
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    app = Path(__file__).parent / "ui" / "app.py"
+    return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app)])
 
 
 def main(argv: list[str] | None = None) -> int:
