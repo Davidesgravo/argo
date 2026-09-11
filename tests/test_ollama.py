@@ -86,3 +86,27 @@ def test_embed():
         return httpx.Response(200, json={"embeddings": [[1.0, 0.0], [0.0, 1.0]]})
 
     assert _client(handler).embed("e", ["a", "b"]) == [[1.0, 0.0], [0.0, 1.0]]
+
+
+def test_timeout_message():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow")
+
+    with pytest.raises(OllamaError, match="Ollama non ha risposto in tempo"):
+        _client(handler).chat("m", "s", "u", None, {})
+
+
+def test_other_transport_errors_are_wrapped():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("server disconnected")
+
+    with pytest.raises(OllamaError, match="Errore di comunicazione con Ollama"):
+        _client(handler).embed("e", ["a"])
+
+
+def test_version():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/version"
+        return httpx.Response(200, json={"version": "0.12.3"})
+
+    assert _client(handler).version() == "0.12.3"

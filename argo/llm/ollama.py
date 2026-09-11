@@ -38,6 +38,8 @@ class LLMClient(Protocol):
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
 
+    def version(self) -> str: ...
+
 
 def _missing(model: str) -> OllamaError:
     return OllamaError(f"Modello mancante: esegui `ollama pull {model}`.")
@@ -50,6 +52,7 @@ class OllamaClient:
         timeout: float = 600.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        self.timeout = timeout
         self.http = httpx.Client(base_url=base_url, timeout=timeout, transport=transport)
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -57,6 +60,13 @@ class OllamaClient:
             r = self.http.request(method, path, json=payload)
         except httpx.ConnectError as e:
             raise OllamaError(_NOT_RUNNING) from e
+        except httpx.TimeoutException as e:
+            raise OllamaError(
+                f"Ollama non ha risposto in tempo (timeout {self.timeout:.0f} s): "
+                "il modello potrebbe essere troppo lento o bloccato. Riprova."
+            ) from e
+        except httpx.TransportError as e:
+            raise OllamaError(f"Errore di comunicazione con Ollama: {e}") from e
         if r.status_code == 404 and payload and "not found" in r.text:
             raise _missing(str(payload.get("model")))
         if r.status_code >= 400:
@@ -106,3 +116,6 @@ class OllamaClient:
         data = self._request("POST", "/api/embed", {"model": model, "input": texts})
         embeddings: list[list[float]] = data["embeddings"]
         return embeddings
+
+    def version(self) -> str:
+        return str(self._request("GET", "/api/version").get("version", ""))
