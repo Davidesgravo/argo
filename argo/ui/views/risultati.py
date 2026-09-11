@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
@@ -38,8 +41,13 @@ def _metrics(mtime: float) -> pd.DataFrame:
     return pd.read_csv(RESULTS_DIR / "metrics.csv")
 
 
+def _predictions_key(runs_dir: Path) -> tuple[int, float]:
+    files = list(runs_dir.glob("*/predictions.jsonl"))
+    return len(files), max((p.stat().st_mtime for p in files), default=0.0)
+
+
 @st.cache_data(show_spinner=False)
-def _predictions(n_runs: int) -> pd.DataFrame:
+def _predictions(key: tuple[int, float]) -> pd.DataFrame:
     return load_predictions(RUNS_DIR)
 
 
@@ -58,17 +66,23 @@ def render() -> None:
     st.dataframe(table, hide_index=True, use_container_width=True)
     c1, c2 = st.columns(2)
     with c1:
-        st.pyplot(heatmap_figure(m, run))
+        fig = heatmap_figure(m, run)
+        st.pyplot(fig)
+        plt.close(fig)
     with c2:
-        st.pyplot(fpr_figure(m, run))
+        fig = fpr_figure(m, run)
+        st.pyplot(fig)
+        plt.close(fig)
 
-    preds = _predictions(len(list(RUNS_DIR.glob("*/predictions.jsonl"))))
+    preds = _predictions(_predictions_key(RUNS_DIR))
     test = [s for s in corpus if s.split == "test"]
     rq3 = rq3_table(preds, test)
     if not rq3.empty and rq3.recall_grown.notna().any():
         st.subheader("RQ3 · lo storico delle ondate precedenti aiuta?")
         st.dataframe(rq3, hide_index=True)
-        st.pyplot(rq3_figure(rq3))
+        fig = rq3_figure(rq3)
+        st.pyplot(fig)
+        plt.close(fig)
 
     st.subheader("Dettaglio errori")
     by_id = {s.id: s for s in test}
