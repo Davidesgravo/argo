@@ -11,3 +11,8 @@ def test_ui_command_registered():
 def test_run_rejects_invalid_run_id():
     with pytest.raises(SystemExit):
         build_parser().parse_args(["run", "--run-id", ""])
+
+
+def test_run_rejects_run_id_with_trailing_newline():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["run", "--run-id", "abc\n"])

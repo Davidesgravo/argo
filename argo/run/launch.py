@@ -14,7 +14,7 @@ RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def is_valid_run_id(run_id: str) -> bool:
-    return bool(RUN_ID_PATTERN.match(run_id))
+    return bool(RUN_ID_PATTERN.fullmatch(run_id))
 
 
 def run_command(cfg: RunConfig) -> list[str]:

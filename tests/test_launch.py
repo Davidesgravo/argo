@@ -66,7 +66,7 @@ def test_is_valid_run_id_accepts(run_id):
 
 @pytest.mark.parametrize(
     "run_id",
-    ["", " x", "a/b", "../x", ".", "..", "-x", "_x", ".x", "a" * 65],
+    ["", " x", "a/b", "../x", ".", "..", "-x", "_x", ".x", "a" * 65, "abc\n", "abc\n\n"],
 )
 def test_is_valid_run_id_rejects(run_id):
     assert not is_valid_run_id(run_id)
