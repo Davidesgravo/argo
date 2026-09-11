@@ -32,3 +32,21 @@ def test_run_reports_fingerprint_mismatch(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr("argo.run.runner.run", mismatch)
     assert main(["run", "--run-id", "r1", "--yes"]) == 1
     assert "nuovo ID" in capsys.readouterr().out
+
+
+def test_fewshot_build_refuses_overwrite_without_force(monkeypatch, capsys):
+    from argo.cli import main
+
+    seen = {}
+
+    def fake_build(corpus, dossiers, path=None, force=False):
+        seen["force"] = force
+        if not force:
+            raise FileExistsError("esiste già: usa --force")
+        return []
+
+    monkeypatch.setattr("argo.dataset.build.load_corpus", lambda: [])
+    monkeypatch.setattr("argo.extract.build.load_dossiers", lambda corpus: {})
+    monkeypatch.setattr("argo.prompts.fewshot.build_fewshot", fake_build)
+    assert main(["fewshot", "build"]) == 1 and "--force" in capsys.readouterr().out
+    assert main(["fewshot", "build", "--force"]) == 0 and seen["force"] is True

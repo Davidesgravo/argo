@@ -44,9 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     fs = sub.add_parser("fewshot", help="few-shot examples for P2")
-    fs.add_subparsers(dest="fewshot_command", required=True).add_parser(
+    fsb = fs.add_subparsers(dest="fewshot_command", required=True).add_parser(
         "build", help="select 4 history examples into data/fewshot.json"
-    ).set_defaults(func=_fewshot_build)
+    )
+    fsb.add_argument("--force", action="store_true", help="overwrite an existing fewshot.json")
+    fsb.set_defaults(func=_fewshot_build)
 
     rag = sub.add_parser("rag", help="RAG indexes for P3")
     rag.add_subparsers(dest="rag_command", required=True).add_parser(
@@ -111,13 +113,18 @@ def _eval(_: argparse.Namespace) -> int:
     return 0
 
 
-def _fewshot_build(_: argparse.Namespace) -> int:
+def _fewshot_build(args: argparse.Namespace) -> int:
     from argo.dataset.build import load_corpus
     from argo.extract.build import load_dossiers
     from argo.prompts.fewshot import FEWSHOT_PATH, build_fewshot
 
     corpus = load_corpus()
-    for e in build_fewshot(corpus, load_dossiers(corpus)):
+    try:
+        examples = build_fewshot(corpus, load_dossiers(corpus), FEWSHOT_PATH, force=args.force)
+    except (FileExistsError, ValueError) as err:
+        print(err)
+        return 1
+    for e in examples:
         print(f"{e.label:9s} {e.sample_id}  technique={e.answer.technique if e.answer else '-'}")
     print(f"written {FEWSHOT_PATH} — review the 'reasoning' texts before running P2")
     return 0

