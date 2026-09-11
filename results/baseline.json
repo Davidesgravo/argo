@@ -1,5 +1,5 @@
 {
-  "threshold": 3.5,
+  "threshold": 3.0,
   "weights": {
     "lifecycle_changed": 2.0,
     "non_registry_dep": 3.0,
@@ -12,9 +12,9 @@
     "obfuscation": 1.0,
     "network": 0.5
   },
-  "n_history": 60,
-  "f1_history": 0.7407,
-  "recall_history": 0.6,
-  "fpr_history": 0.1,
-  "youden_history": 0.5
+  "n_history": 50,
+  "f1_history": 0.7463,
+  "recall_history": 0.625,
+  "fpr_history": 0.2,
+  "youden_history": 0.425
 }
