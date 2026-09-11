@@ -35,6 +35,13 @@ def test_templates_name_no_test_set_package():
             assert not re.search(pattern, text, re.IGNORECASE), f"{name!r} in {path.name}"
 
 
+def test_taxonomy_carries_only_pre_2025_attack_knowledge():
+    text = (TEMPLATE_DIR / "taxonomy.txt").read_text(encoding="utf-8").lower()
+    banned = ("bun", "trufflehog", "github", "workflow", "propagat", "worm", "secret-scann")
+    for word in (*banned, "runtime"):
+        assert word not in text, word
+
+
 def test_p0_contains_dossier_and_instructions_but_no_taxonomy():
     rp = render("p0", DOSSIER)
     assert rp.user.endswith(DOSSIER) and "technique: one of" in rp.user

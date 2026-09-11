@@ -44,7 +44,18 @@ l'ultima ricostruzione (`argo dataset build`, `argo dossier build`).
   `docs/models.md`). Un risultato migliore su Shai-Hulud può dipendere anche dalla capacità del
   modello e non solo dall'esposizione all'attacco durante l'addestramento.
 
-## Prompt P3
+## Prompt
+
+- **Tassonomia limitata alle conoscenze pre-2025.** La tassonomia di P1-P3 descrive solo
+  schemi d'attacco noti prima del 2025, l'orizzonte di conoscenza dei modelli principali:
+  script d'installazione, dipendenze non-registry, payload offuscati, lettura di token npm,
+  `.npmrc`, credenziali cloud e chiavi SSH, esfiltrazione, download ed esecuzione di script o
+  binari remoti, dependency confusion e typosquatting. Sono stati tolti di proposito gli
+  elementi tipici delle ondate Shai-Hulud (auto-propagazione con token rubati, repository e
+  workflow GitHub, download di runtime alternativi, strumenti di scansione dei segreti):
+  RQ3 chiede se la conoscenza delle ondate aiuta, quindi la condizione di base non deve
+  contenerla. L'etichetta `self_propagation` resta nel vocabolario dell'output
+  (`instructions.txt`) solo come nome di categoria.
 
 - **Famiglie di campagna euristiche.** P3 tiene al più un vicino per famiglia, definita come
   scope npm oppure prefisso del nome prima del primo `-`. Cloni della stessa campagna con nomi
