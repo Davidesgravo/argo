@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -8,6 +9,12 @@ from typing import Any
 
 from argo.config import ROOT, RUNS_DIR
 from argo.run.runner import RunConfig
+
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+def is_valid_run_id(run_id: str) -> bool:
+    return bool(RUN_ID_PATTERN.match(run_id))
 
 
 def run_command(cfg: RunConfig) -> list[str]:
@@ -36,6 +43,8 @@ def run_command(cfg: RunConfig) -> list[str]:
 
 
 def start_run(cfg: RunConfig, runs_dir: Path = RUNS_DIR) -> int:
+    if not is_valid_run_id(cfg.run_id):
+        raise ValueError(f"invalid run_id: {cfg.run_id!r}")
     out = runs_dir / cfg.run_id
     out.mkdir(parents=True, exist_ok=True)
     with (out / "run.log").open("a") as log:

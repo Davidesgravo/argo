@@ -6,7 +6,7 @@ import streamlit as st
 from argo.config import BENCH_PATH, MODELS, PROMPT_IDS, RUNS_DIR
 from argo.eval.report import SUBGROUPS
 from argo.run.benchmark import estimate_seconds, fmt_duration
-from argo.run.launch import list_runs, start_run
+from argo.run.launch import is_valid_run_id, list_runs, start_run
 from argo.run.runner import RunConfig, plan_jobs
 from argo.ui.common import PROMPT_LABELS, corpus_or_warn, model_choices
 
@@ -39,13 +39,20 @@ def render() -> None:
         subgroups = st.multiselect("Sottogruppi (vuoto = tutti)", list(SUBGROUPS))
         submitted = st.form_submit_button("Calcola stima")
     if submitted:
-        st.session_state["cfg"] = RunConfig(
-            run_id=run_id.strip(),
-            models=models,
-            prompts=["p3"] if mode == "rq3" else prompts,
-            mode=mode,
-            subgroups=subgroups or None,
-        )
+        run_id = run_id.strip()
+        if not is_valid_run_id(run_id):
+            st.error(
+                "ID del run non valido: usa lettere, cifre, '-', '_' o '.' (max 64 caratteri)."
+            )
+            st.session_state.pop("cfg", None)
+        else:
+            st.session_state["cfg"] = RunConfig(
+                run_id=run_id,
+                models=models,
+                prompts=["p3"] if mode == "rq3" else prompts,
+                mode=mode,
+                subgroups=subgroups or None,
+            )
     cfg = st.session_state.get("cfg")
     if cfg is not None:
         jobs = plan_jobs(cfg, corpus)

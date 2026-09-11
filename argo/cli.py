@@ -8,6 +8,16 @@ if TYPE_CHECKING:
 Handler = Callable[[argparse.Namespace], int]
 
 
+def _run_id_type(value: str) -> str:
+    from argo.run.launch import is_valid_run_id
+
+    if not is_valid_run_id(value):
+        raise argparse.ArgumentTypeError(
+            "ID del run non valido: usa lettere, cifre, '-', '_' o '.' (max 64 caratteri)."
+        )
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="argo", description="Argo supply-chain defender PoC")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -49,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.set_defaults(func=_bench)
 
     r = sub.add_parser("run", help="run an experiment (resumable)")
-    r.add_argument("--run-id", required=True)
+    r.add_argument("--run-id", required=True, type=_run_id_type)
     r.add_argument("--models", nargs="+", default=None)
     r.add_argument("--prompts", nargs="+", default=None)
     r.add_argument("--mode", choices=["standard", "rq3"], default="standard")
