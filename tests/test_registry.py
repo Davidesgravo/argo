@@ -27,6 +27,28 @@ def test_previous_version_none():
     assert previous_version(TIME, "9.9.9") is None
 
 
+def test_previous_version_backport_ignores_higher_major_line():
+    # 7.6.5 is the real predecessor of 7.6.6. 8.8.0 was published in between (a newer
+    # major line) but is numerically HIGHER than 7.6.6, so it must never be picked as
+    # "previous version" even though it is the most recently published version before
+    # 7.6.6's publish time.
+    time_map = {
+        "7.6.5": "2025-01-01T00:00:00Z",
+        "8.8.0": "2025-02-01T00:00:00Z",
+        "7.6.6": "2025-03-01T00:00:00Z",
+    }
+    assert previous_version(time_map, "7.6.6") == "7.6.5"
+
+
+def test_previous_version_ignores_unparsable_versions():
+    time_map = {
+        "1.0.0": "2024-01-01T00:00:00Z",
+        "1.2": "2024-06-01T00:00:00Z",  # does not parse as three integers
+        "2.0.0": "2024-07-01T00:00:00Z",
+    }
+    assert previous_version(time_map, "2.0.0") == "1.0.0"
+
+
 def test_versions_in_window():
     assert versions_in_window(TIME, "2025-01-01", "2025-12-31") == ["1.1.0", "1.1.1", "1.1.2"]
 

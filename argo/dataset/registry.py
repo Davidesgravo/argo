@@ -69,15 +69,40 @@ def _stable_versions(time_map: dict[str, str]) -> list[tuple[str, str]]:
     return sorted((ts, v) for v, ts in time_map.items() if v not in _META_KEYS and "-" not in v)
 
 
+def _parse_semver(v: str) -> tuple[int, int, int] | None:
+    """Parse a strict major.minor.patch version; anything else is unparsable."""
+    parts = v.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return None
+
+
 def previous_version(
     time_map: dict[str, str], version: str, exclude: Iterable[str] = ()
 ) -> str | None:
+    """Highest stable version strictly lower than `version` by numeric semver that was
+    also published before it. A different, numerically HIGHER release line published
+    in between (e.g. a 7.x backport released after 8.x) must never be picked just
+    because it is the most recent by publish time."""
     t = time_map.get(version)
-    if t is None:
+    target = _parse_semver(version)
+    if t is None or target is None:
         return None
     skip = set(exclude) | {version}
-    earlier = [v for ts, v in _stable_versions(time_map) if ts < t and v not in skip]
-    return earlier[-1] if earlier else None
+    candidates: list[tuple[tuple[int, int, int], str]] = []
+    for ts, v in _stable_versions(time_map):
+        if v in skip or ts >= t:
+            continue
+        parsed = _parse_semver(v)
+        if parsed is None or parsed >= target:
+            continue
+        candidates.append((parsed, v))
+    if not candidates:
+        return None
+    return max(candidates)[1]
 
 
 def versions_in_window(time_map: dict[str, str], start: str, end: str) -> list[str]:
