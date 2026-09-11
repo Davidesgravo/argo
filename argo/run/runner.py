@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
@@ -242,13 +243,27 @@ def _git_commit() -> str | None:
     return out.stdout.strip() or None
 
 
+PKG_DIR = Path(__file__).resolve().parent.parent
+PIPELINE_CODE = ("prompts/*.py", "run/runner.py", "config.py")
+
+
+def pipeline_code_hash(pkg_dir: Path = PKG_DIR) -> str:
+    """sha256 over the code that renders prompts, retrieves neighbours and sets options."""
+    files = sorted({f for pattern in PIPELINE_CODE for f in pkg_dir.glob(pattern) if f.is_file()})
+    h = hashlib.sha256()
+    for f in files:
+        h.update(f.relative_to(pkg_dir).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
 def run_fingerprint(
     predictor: Predictor, jobs: Sequence[Job], fewshot_path: Path, corpus_path: Path
 ) -> dict[str, Any]:
-    """Everything outside the prediction records that determines them (run provenance)."""
+    """Everything outside the prediction records that determines them. A resumed run must
+    match it exactly (git commit and Ollama version are recorded per session instead)."""
     indexes = sorted({j.rag_index for j in jobs if j.rag_index})
     return {
-        "templates": {p.name: _sha256(p) for p in sorted(TEMPLATE_DIR.iterdir()) if p.is_file()},
+        "templates": {p.name: _sha256(p) for p in sorted(TEMPLATE_DIR.glob("*.txt"))},
         "fewshot_sha256": _sha256(fewshot_path),
         "extractor_version": EXTRACTOR_VERSION,
         "corpus_sha256": _sha256(corpus_path),
@@ -259,22 +274,39 @@ def run_fingerprint(
         },
         "embed_model": EMBED_MODEL,
         "embed_model_digest": predictor.client.model_digest(EMBED_MODEL) if indexes else None,
-        "ollama_version": predictor.client.version(),
-        "git_commit": _git_commit(),
+        "pipeline_code_hash": pipeline_code_hash(),
     }
 
 
-def _check_resume(run_id: str, cfg_path: Path, pred_path: Path, fp: dict[str, Any]) -> None:
-    if not cfg_path.exists() or not pred_path.exists() or pred_path.stat().st_size == 0:
-        return
-    old = json.loads(cfg_path.read_text()).get("fingerprint") or {}
-    changed = sorted(k for k in fp.keys() | old.keys() if old.get(k) != fp.get(k))
-    if changed:
-        raise RunMismatchError(
-            f"Il run {run_id!r} esiste già ma è stato prodotto in condizioni diverse "
-            f"({', '.join(changed)}). Per non mescolare predizioni vecchie e nuove "
-            "usa un nuovo ID del run."
-        )
+def _previous_sessions(
+    run_id: str, cfg_path: Path, pred_path: Path, fp: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Refuses to resume a run whose provenance cannot be matched; returns its sessions."""
+    has_predictions = pred_path.exists() and pred_path.stat().st_size > 0
+    if not cfg_path.exists():
+        if has_predictions:
+            raise RunMismatchError(
+                f"Il run {run_id!r} ha già delle predizioni ma manca config.json: non si può "
+                "verificare con quale configurazione sono state prodotte. Usa un nuovo ID del run."
+            )
+        return []
+    old = json.loads(cfg_path.read_text())
+    if has_predictions:
+        stored = old.get("fingerprint") or {}
+        changed = sorted(k for k in fp.keys() | stored.keys() if stored.get(k) != fp.get(k))
+        if changed:
+            raise RunMismatchError(
+                f"Il run {run_id!r} esiste già ma è stato prodotto in condizioni diverse "
+                f"({', '.join(changed)}). Per non mescolare predizioni vecchie e nuove "
+                "usa un nuovo ID del run."
+            )
+    return list(old.get("sessions") or [])
+
+
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
 
 
 def run(
@@ -292,23 +324,36 @@ def run(
     cfg_path = out_dir / "config.json"
     jobs = [j for j in plan_jobs(cfg, samples) if j.sample_id in dossiers]
     fp = run_fingerprint(predictor, jobs, fewshot_path, corpus_path)
-    _check_resume(cfg.run_id, cfg_path, pred_path, fp)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(
-        json.dumps({**asdict(cfg), "n_jobs": len(jobs), "fingerprint": fp}, indent=2)
+    sessions = _previous_sessions(cfg.run_id, cfg_path, pred_path, fp)
+    sessions.append(
+        {
+            "started_at": datetime.now(UTC).isoformat(),
+            "git_commit": _git_commit(),
+            "ollama_version": predictor.client.version(),
+        }
     )
-    repair_tail(pred_path, out_dir / "truncated_tail.txt")
-    done = completed_keys(pred_path)
-    todo = [j for j in jobs if j.key not in done]
-    log(f"run {cfg.run_id}: {len(jobs)} jobs, {len(jobs) - len(todo)} already done")
-    for i, j in enumerate(todo, 1):
-        p = predictor.predict(
-            cfg.run_id, j.sample_id, dossiers[j.sample_id], j.model, j.prompt_id, j.rag_index
-        )
-        append_jsonl(pred_path, p.model_dump())
-        verdict = p.output.verdict if p.output else "INVALID"
-        log(
-            f"[{len(jobs) - len(todo) + i}/{len(jobs)}] {j.model} {j.prompt_id} "
-            f"{j.sample_id} -> {verdict} ({p.latency_s:.1f}s)"
-        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(
+        cfg_path, {**asdict(cfg), "n_jobs": len(jobs), "fingerprint": fp, "sessions": sessions}
+    )
+    pid_path, pid = out_dir / "pid", str(os.getpid())
+    pid_path.write_text(pid)  # lets the UI see CLI runs as running
+    try:
+        repair_tail(pred_path, out_dir / "truncated_tail.txt")
+        done = completed_keys(pred_path)
+        todo = [j for j in jobs if j.key not in done]
+        log(f"run {cfg.run_id}: {len(jobs)} jobs, {len(jobs) - len(todo)} already done")
+        for i, j in enumerate(todo, 1):
+            p = predictor.predict(
+                cfg.run_id, j.sample_id, dossiers[j.sample_id], j.model, j.prompt_id, j.rag_index
+            )
+            append_jsonl(pred_path, p.model_dump())
+            verdict = p.output.verdict if p.output else "INVALID"
+            log(
+                f"[{len(jobs) - len(todo) + i}/{len(jobs)}] {j.model} {j.prompt_id} "
+                f"{j.sample_id} -> {verdict} ({p.latency_s:.1f}s)"
+            )
+    finally:
+        if pid_path.exists() and pid_path.read_text().strip() == pid:
+            pid_path.unlink()
     return pred_path

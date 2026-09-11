@@ -83,8 +83,8 @@ def render() -> None:
         elif (RUNS_DIR / cfg.run_id).exists():
             st.warning(
                 "Esiste già un run con questo ID: verrà ripreso da dove si era fermato. "
-                "Se prompt, corpus, indici o Ollama sono cambiati il run verrà rifiutato: "
-                "in quel caso usa un nuovo ID."
+                "Se template, esempi few-shot, corpus, indici RAG, estrattore o codice della "
+                "pipeline sono cambiati il run verrà rifiutato: in quel caso usa un nuovo ID."
             )
         if st.button("Avvia run", type="primary", disabled=problem is not None):
             pid = start_run(cfg)

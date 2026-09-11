@@ -202,7 +202,7 @@ Totale ~1.930 inferenze. Stima, da verificare con `argo bench`: **4-5 ore**, ese
 
 ### Runner
 - Ogni modello si carica una volta sola e processa tutti i suoi campioni.
-- Ogni predizione viene aggiunta a `predictions.jsonl` appena calcolata. Al riavvio, il run salta le coppie (campione, modello, prompt, indice) già presenti, taglia un'eventuale ultima riga troncata e rifiuta di riprendere se l'impronta registrata in `config.json` (hash dei template e del file few-shot, versione dell'estrattore, hash del corpus e degli indici RAG usati, modello di embedding, versione di Ollama, commit git) è cambiata.
+- Ogni predizione viene aggiunta a `predictions.jsonl` appena calcolata. Al riavvio, il run salta le coppie (campione, modello, prompt, indice) già presenti, taglia un'eventuale ultima riga troncata e rifiuta di riprendere se l'impronta registrata in `config.json` è cambiata (hash dei template `*.txt`, del file few-shot e del codice della pipeline — `argo/prompts/*.py`, `argo/run/runner.py`, `argo/config.py` —, versione dell'estrattore, hash del corpus e degli indici RAG usati, modello di embedding e suo digest) oppure se ci sono predizioni ma manca `config.json`. Commit git e versione di Ollama non bloccano la ripresa: sono registrati per sessione in `config.json` (`sessions`). Durante l'esecuzione il run scrive il proprio `pid` nella cartella del run.
 - Prima di partire mostra la stima di durata, basata sui dati di `argo bench`.
 
 ### Record di predizione

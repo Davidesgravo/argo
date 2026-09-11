@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -12,6 +13,7 @@ from argo.run.runner import (
     RunConfig,
     RunMismatchError,
     completed_keys,
+    pipeline_code_hash,
     plan_jobs,
     rq3_index,
     run,
@@ -40,8 +42,10 @@ class FakeClient:
         self.embed_calls.extend(texts)
         return [[1.0, 0.0, 0.0] for _ in texts]
 
+    ollama_version = "0.0.0-test"
+
     def version(self):
-        return "0.0.0-test"
+        return self.ollama_version
 
 
 def _s(i, sub, split="test", pair=None, label="malicious", history_set=None):
@@ -207,8 +211,10 @@ def test_config_records_fingerprint(tmp_path):
     build_index("storico_base", history, {"h1": _d("h1")}, _hist_embed).save(rag)
     client = FakeClient([GOOD.model_dump_json()])
     _run(RunConfig("r1", ["m"], ["p0", "p3"]), SAMPLES[:1], client, tmp_path, rag_dir=rag)
-    fp = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["fingerprint"]
+    config = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())
+    fp = config["fingerprint"]
     assert set(fp["templates"]) >= {"p0.txt", "p3.txt", "taxonomy.txt", "system.txt"}
+    assert all(name.endswith(".txt") for name in fp["templates"])
     assert fp["fewshot_sha256"] == hashlib.sha256(b"fewshot.json").hexdigest()
     assert fp["corpus_sha256"] == hashlib.sha256(b"corpus.jsonl").hexdigest()
     assert fp["extractor_version"] == EXTRACTOR_VERSION
@@ -217,7 +223,91 @@ def test_config_records_fingerprint(tmp_path):
         for name in ("storico_base.json", "storico_base.npy")
     }
     assert fp["embed_model"] == EMBED_MODEL and fp["embed_model_digest"] == "sha256:" + EMBED_MODEL
-    assert fp["ollama_version"] == "0.0.0-test" and "git_commit" in fp
+    assert fp["pipeline_code_hash"] == pipeline_code_hash()
+    assert "ollama_version" not in fp and "git_commit" not in fp  # recorded per session
+    [session] = config["sessions"]
+    assert session["ollama_version"] == "0.0.0-test" and "git_commit" in session
+    assert session["started_at"]
+    assert not list((tmp_path / "runs" / "r1").glob("*.tmp"))  # atomic write
+
+
+def test_templates_fingerprint_ignores_non_txt_files(tmp_path, monkeypatch):
+    tdir = tmp_path / "templates"
+    tdir.mkdir()
+    (tdir / "p0.txt").write_text("x")
+    (tdir / ".DS_Store").write_text("junk")
+    monkeypatch.setattr("argo.run.runner.TEMPLATE_DIR", tdir)
+    _run(RunConfig("r1", ["m"], ["p0"]), SAMPLES[:1], FakeClient(["x"]), tmp_path)
+    fp = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["fingerprint"]
+    assert list(fp["templates"]) == ["p0.txt"]
+
+
+def test_resume_records_sessions_but_ignores_commit_and_ollama_version(tmp_path, monkeypatch):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    client = FakeClient([GOOD.model_dump_json()])
+    monkeypatch.setattr("argo.run.runner._git_commit", lambda: "commit-1")
+    _run(cfg, SAMPLES[:1], client, tmp_path)
+    monkeypatch.setattr("argo.run.runner._git_commit", lambda: "commit-2")
+    client.ollama_version = "9.9.9"
+    _run(cfg, SAMPLES[:2], client, tmp_path)  # does not refuse
+    sessions = json.loads((tmp_path / "runs" / "r1" / "config.json").read_text())["sessions"]
+    assert [(s["git_commit"], s["ollama_version"]) for s in sessions] == [
+        ("commit-1", "0.0.0-test"),
+        ("commit-2", "9.9.9"),
+    ]
+    assert len(client.calls) == 2
+
+
+def test_resume_refuses_changed_pipeline_code(tmp_path, monkeypatch):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    client = FakeClient([GOOD.model_dump_json()])
+    _run(cfg, SAMPLES[:1], client, tmp_path)
+    monkeypatch.setattr("argo.run.runner.pipeline_code_hash", lambda: "edited")
+    with pytest.raises(RunMismatchError, match="pipeline_code_hash"):
+        _run(cfg, SAMPLES[:2], client, tmp_path)
+
+
+def test_predictions_without_config_are_refused(tmp_path):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    client = FakeClient([GOOD.model_dump_json()])
+    pred = _run(cfg, SAMPLES[:1], client, tmp_path)
+    (pred.parent / "config.json").unlink()
+    with pytest.raises(RunMismatchError, match="config.json"):
+        _run(cfg, SAMPLES[:2], client, tmp_path)
+    assert len(client.calls) == 1
+
+
+def test_pipeline_code_hash_covers_prompts_runner_and_config(tmp_path):
+    for rel in ("prompts/render.py", "prompts/templates/x.txt", "run/runner.py", "run/other.py"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(rel)
+    (tmp_path / "config.py").write_text("A = 1")
+    (tmp_path / "cli.py").write_text("x")
+    base = pipeline_code_hash(tmp_path)
+    for rel in ("prompts/templates/x.txt", "run/other.py", "cli.py"):  # not pipeline code
+        (tmp_path / rel).write_text("changed")
+    assert pipeline_code_hash(tmp_path) == base
+    for rel in ("prompts/render.py", "run/runner.py", "config.py"):
+        (tmp_path / rel).write_text(rel + " changed")
+        assert pipeline_code_hash(tmp_path) != base
+        base = pipeline_code_hash(tmp_path)
+
+
+def test_run_writes_pid_while_running_and_removes_it(tmp_path):
+    pid_path = tmp_path / "runs" / "r1" / "pid"
+    seen = []
+
+    class Watching(FakeClient):
+        def chat(self, *args, **kwargs):
+            seen.append(pid_path.read_text())
+            if len(seen) == 2:
+                raise RuntimeError("boom")
+            return super().chat(*args, **kwargs)
+
+    client = Watching([GOOD.model_dump_json()])
+    with pytest.raises(RuntimeError):
+        _run(RunConfig("r1", ["m"], ["p0"]), SAMPLES[:2], client, tmp_path)
+    assert seen == [str(os.getpid())] * 2 and not pid_path.exists()
 
 
 def test_resume_refuses_changed_fingerprint(tmp_path):
