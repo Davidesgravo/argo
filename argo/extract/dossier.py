@@ -1,7 +1,7 @@
 from argo.config import DOSSIER_TOKEN_BUDGET, EXTRACTOR_VERSION
 from argo.extract.archive import PackageFiles
 from argo.extract.diff import diff_files
-from argo.extract.indicators import CATEGORY_ORDER, scan_package, scan_text
+from argo.extract.indicators import CATEGORY_ORDER, is_code, scan_package, scan_text
 from argo.extract.manifest import dep_changes, lifecycle_scripts, outside_files, script_targets
 from argo.extract.profile import profile_file
 from argo.schema import Dossier, FileProfile, Hit
@@ -86,20 +86,33 @@ def build_dossier(
     touched = [c.path for c in changes if c.status != "removed"]
     deps = dep_changes(m_new, m_old)
     outside = outside_files(added, m_new)
-    # Only the 10 largest outside-declared-`files` are treated as suspicious enough to
-    # profile/prioritize; with hundreds of incidental outside files (e.g. W2-like
-    # payloads), including all of them would drown the real signal (see MAX_OUTSIDE_
-    # FILES_SHOWN). Dossier.outside_files below still keeps the full, uncapped list.
-    outside_by_size = sorted(outside, key=lambda p: sizes.get(p, 0), reverse=True)
-    shown_outside = outside_by_size[:MAX_OUTSIDE_FILES_SHOWN]
-    targets = script_targets(life, new.files)
-    targets += [p for p in shown_outside if p not in targets]
-    profiles = [profile_file(p, new.files[p]) for p in targets]
 
     hits: list[Hit] = []
     if life:
         hits += scan_text(SCRIPTS_PSEUDO_PATH, "\n".join(f"{k}: {v}" for k, v in life.items()))
     hits += scan_package(new, touched)
+    paths_with_hits = {h.path for h in hits}
+
+    def _tier(p: str) -> int:
+        if not is_code(p):
+            return 2  # non-code / binary / asset
+        return 0 if p in paths_with_hits else 1  # code with a hit, else code without
+
+    # Only the 10 highest-priority outside-declared-`files` are treated as suspicious
+    # enough to profile/prioritize; with hundreds of incidental outside files (e.g.
+    # W2-like payloads), including all of them would drown the real signal (see
+    # MAX_OUTSIDE_FILES_SHOWN). Priority is a TIER — code with an indicator hit, then
+    # code without one, then non-code/binary/asset — with size only a tie-breaker
+    # (larger first) within a tier: file size carries no suspicion signal on its own,
+    # a small malicious payload sitting next to large benign vendor bundles is exactly
+    # the profile this extractor must not hide. Dossier.outside_files below still
+    # keeps the full, uncapped list.
+    outside_ranked = sorted(outside, key=lambda p: (_tier(p), -sizes.get(p, 0)))
+    shown_outside = outside_ranked[:MAX_OUTSIDE_FILES_SHOWN]
+    targets = script_targets(life, new.files)
+    targets += [p for p in shown_outside if p not in targets]
+    profiles = [profile_file(p, new.files[p]) for p in targets]
+
     first = set(targets) | {SCRIPTS_PSEUDO_PATH}
     hits.sort(key=lambda h: (h.path not in first, CATEGORY_ORDER.index(h.category), h.path, h.line))
     seen_hits: set[tuple[str, str, int]] = set()
@@ -144,8 +157,8 @@ def build_dossier(
         f"- added file outside declared `files`: {p} ({fmt_size(sizes.get(p, 0))})"
         for p in shown_outside
     ]
-    if len(outside_by_size) > MAX_OUTSIDE_FILES_SHOWN:
-        extra = len(outside_by_size) - MAX_OUTSIDE_FILES_SHOWN
+    if len(outside_ranked) > MAX_OUTSIDE_FILES_SHOWN:
+        extra = len(outside_ranked) - MAX_OUTSIDE_FILES_SHOWN
         vectors.append(f"- … and {extra} more files outside declared `files`")
     for line in vectors or ["- none"]:
         w.add(line, "vectors")
