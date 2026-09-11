@@ -25,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     bl_sub.add_parser("calibrate", help="choose the threshold on history").set_defaults(
         func=_baseline_calibrate
     )
+    sub.add_parser("eval", help="metrics, tables and figures into results/").set_defaults(
+        func=_eval
+    )
     return parser
 
 
@@ -56,6 +59,14 @@ def _baseline_calibrate(_: argparse.Namespace) -> int:
 
     corpus = load_corpus()
     print(calibrate_baseline(corpus, load_dossiers(corpus)))
+    return 0
+
+
+def _eval(_: argparse.Namespace) -> int:
+    from argo.eval.report import write_report
+
+    for p in write_report():
+        print(p)
     return 0
 
 
