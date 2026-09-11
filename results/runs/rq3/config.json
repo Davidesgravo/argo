@@ -1,0 +1,47 @@
+{
+  "run_id": "rq3",
+  "models": [
+    "qwen2.5-coder:7b",
+    "qwen3:4b",
+    "gemma3:4b",
+    "llama3.2:3b"
+  ],
+  "prompts": [
+    "p3"
+  ],
+  "mode": "rq3",
+  "rag_index": "storico_base",
+  "subgroups": null,
+  "limit": null,
+  "n_jobs": 76,
+  "fingerprint": {
+    "templates": {
+      "instructions.txt": "08302946608751e49543e7c734d3eeab77392fcd5d9b1766916ce740aec16e3b",
+      "p0.txt": "e00c914fce4ceea624a99375ee7eef3e298864cb87c74580a93747ccb7832c39",
+      "p1.txt": "4049934106c878fe75f9e7e087e0aa6d7a5a1da6a2e27ee98f870699c8e1d551",
+      "p2.txt": "c1a2f62621211aa73472fb20a834c97ac6e69a67cff0d348ed1b572057ae178d",
+      "p3.txt": "1072d5ff420a09f65b98e3c67a8c4588733b122570ec3e85f7f07c20af992086",
+      "system.txt": "fc319233bc200a6f6e99a9b20a7e4da0778eac56fa2078db124eec54dacfd86a",
+      "taxonomy.txt": "75023b54c6244bf9575de185882f615fade7807f0b49d9233ebf6f0a3f9dbdcb"
+    },
+    "fewshot_sha256": "de41de413dc309ae29c4ae3e897d5bddcfa73b0be8308e461e46915a89ae4119",
+    "extractor_version": "2",
+    "corpus_sha256": "754a238c3b65351d1c2d05f2930c87a8fa02c61d9e92e557d1f1c9462f77136d",
+    "rag_index_files": {
+      "storico_w1.json": "6a148eed7fa8693a32627430413c20053f085953b9b7e4e0af00155fca366202",
+      "storico_w1.npy": "bc47771ab90df14e3c09dea0e58704f047f38e7fde84ebff775aae4bd1052c52",
+      "storico_w1w2.json": "b279e8feafa7f1c5d63519ea33f1a16618d0b07ac611704a6adc0e0afe913a7f",
+      "storico_w1w2.npy": "840bca009a799b43aa46219c75b7713c8d788cd68ccb18c3d5d9e83f198c216b"
+    },
+    "embed_model": "nomic-embed-text",
+    "embed_model_digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+    "pipeline_code_hash": "9d94bfd7f5fc05af10c3e5ac4bbf5515c08af892ec4517c43d2986670598595a"
+  },
+  "sessions": [
+    {
+      "started_at": "2026-09-11T18:44:32.255266+00:00",
+      "git_commit": "d7c9fcc9d3a5d6ef245ab13465b56639ed1233fb",
+      "ollama_version": "0.33.3"
+    }
+  ]
+}
