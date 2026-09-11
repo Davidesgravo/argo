@@ -41,21 +41,34 @@ def score(d: Dossier) -> float:
     return sum(WEIGHTS[k] for k, on in features(d).items() if on)
 
 
-def f1_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
-    tp = sum(s >= t and y for s, y in zip(scores, labels, strict=True))
-    fp = sum(s >= t and not y for s, y in zip(scores, labels, strict=True))
-    fn = sum(s < t and y for s, y in zip(scores, labels, strict=True))
-    return 0.0 if tp == 0 else 2 * tp / (2 * tp + fp + fn)
-
-
-def youden_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
+def _counts(scores: Sequence[float], labels: Sequence[bool], t: float) -> tuple[int, int, int, int]:
+    """Confusion counts (tp, fp, fn, tn) under the single `score >= t` convention."""
     tp = sum(s >= t and y for s, y in zip(scores, labels, strict=True))
     fp = sum(s >= t and not y for s, y in zip(scores, labels, strict=True))
     fn = sum(s < t and y for s, y in zip(scores, labels, strict=True))
     tn = sum(s < t and not y for s, y in zip(scores, labels, strict=True))
+    return tp, fp, fn, tn
+
+
+def f1_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
+    tp, fp, fn, _tn = _counts(scores, labels, t)
+    return 0.0 if tp == 0 else 2 * tp / (2 * tp + fp + fn)
+
+
+def youden_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> float:
+    tp, fp, fn, tn = _counts(scores, labels, t)
     recall = 0.0 if tp + fn == 0 else tp / (tp + fn)
     fpr = 0.0 if fp + tn == 0 else fp / (fp + tn)
     return recall - fpr
+
+
+def rates_at(scores: Sequence[float], labels: Sequence[bool], t: float) -> dict[str, float]:
+    """Recall, FPR, F1 and Youden's J at threshold `t`, sharing one confusion count."""
+    tp, fp, fn, tn = _counts(scores, labels, t)
+    recall = 0.0 if tp + fn == 0 else tp / (tp + fn)
+    fpr = 0.0 if fp + tn == 0 else fp / (fp + tn)
+    f1 = 0.0 if tp == 0 else 2 * tp / (2 * tp + fp + fn)
+    return {"recall": recall, "fpr": fpr, "f1": f1, "youden": recall - fpr}
 
 
 def calibrate(scores: Sequence[float], labels: Sequence[bool]) -> float:

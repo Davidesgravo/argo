@@ -6,7 +6,7 @@ from typing import Any
 
 from argo.config import BASELINE_PATH, DATA_DIR, DOSSIER_DIR, EXTRACTOR_VERSION
 from argo.extract.archive import ArchiveError, PackageFiles, read_datadog_zip, read_npm_tgz
-from argo.extract.baseline import WEIGHTS, calibrate, f1_at, score, youden_at
+from argo.extract.baseline import WEIGHTS, calibrate, rates_at, score
 from argo.extract.dossier import build_dossier
 from argo.schema import Dossier, Sample
 
@@ -88,20 +88,15 @@ def calibrate_baseline(
     scores = [score(dossiers[s.id]) for s in hist]
     labels = [s.label == "malicious" for s in hist]
     threshold = calibrate(scores, labels)
-    tp = sum(s >= threshold and y for s, y in zip(scores, labels, strict=True))
-    fp = sum(s >= threshold and not y for s, y in zip(scores, labels, strict=True))
-    fn = sum(s < threshold and y for s, y in zip(scores, labels, strict=True))
-    tn = sum(s < threshold and not y for s, y in zip(scores, labels, strict=True))
-    recall = 0.0 if tp + fn == 0 else tp / (tp + fn)
-    fpr = 0.0 if fp + tn == 0 else fp / (fp + tn)
+    rates = rates_at(scores, labels, threshold)
     result = {
         "threshold": threshold,
         "weights": WEIGHTS,
         "n_history": len(hist),
-        "f1_history": round(f1_at(scores, labels, threshold), 4),
-        "recall_history": round(recall, 4),
-        "fpr_history": round(fpr, 4),
-        "youden_history": round(youden_at(scores, labels, threshold), 4),
+        "f1_history": round(rates["f1"], 4),
+        "recall_history": round(rates["recall"], 4),
+        "fpr_history": round(rates["fpr"], 4),
+        "youden_history": round(rates["youden"], 4),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2))
