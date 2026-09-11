@@ -33,9 +33,10 @@ l'ultima ricostruzione (`argo dataset build`, `argo dossier build`).
   il profilo lo riporta come `minified=yes, obfuscated=no`, quindi la regola "file offuscato
   invocato dallo script" non scatta e la tassonomia ("minified is not the same as
   obfuscated") può spingere i modelli verso il benigno.
-- **Calibrazione della baseline.** La soglia è scelta su tutto lo storico, cioè `storico_base`
-  più i campioni W1 e W2 usati per RQ3. Con il solo `storico_base` la soglia risulta la stessa
-  (3,5), ma il capitolo deve dichiarare su quali campioni è stata calibrata.
+- **Calibrazione della baseline.** La soglia è scelta sul solo `storico_base` (indice di
+  Youden); i campioni W1 e W2 dello storico sono materiale di RQ3 e restano fuori. Sui dossier
+  dell'estrattore v2 la soglia calibrata così è 3,0 (misurata nella revisione; in precedenza,
+  includendo W1 e W2, era 3,5). Il capitolo deve riportare la soglia di `results/baseline.json`.
 
 ## Modelli
 
@@ -56,7 +57,6 @@ l'ultima ricostruzione (`argo dataset build`, `argo dossier build`).
   RQ3 chiede se la conoscenza delle ondate aiuta, quindi la condizione di base non deve
   contenerla. L'etichetta `self_propagation` resta nel vocabolario dell'output
   (`instructions.txt`) solo come nome di categoria.
-
 - **Famiglie di campagna euristiche.** P3 tiene al più un vicino per famiglia, definita come
   scope npm oppure prefisso del nome prima del primo `-`. Cloni della stessa campagna con nomi
   diversi (per esempio `gita-…`, `budi-…`, `andi-…`, oppure i nomi `…_z3n`) restano famiglie

@@ -137,7 +137,7 @@ Testo strutturato, formato identico per tutti i campioni, budget di **~2.000 tok
 I file sopra una soglia di qualche MB non vengono letti per intero: vengono solo profilati. I file binari compaiono solo con nome e dimensione.
 
 ### Baseline a regole
-Score = somma pesata delle categorie di indicatori presenti. Pesi fissati a mano e documentati, per esempio uno script di lifecycle nuovo che invoca un file offuscato pesa molto. La **soglia** si sceglie massimizzando l'indice di Youden (recall − FPR) **sullo storico**, mai sul test: lo storico è sbilanciato (50 malevoli, 10 benigni) e massimizzare F1 sceglierebbe la soglia degenere «tutto malevolo».
+Score = somma pesata delle categorie di indicatori presenti. Pesi fissati a mano e documentati, per esempio uno script di lifecycle nuovo che invoca un file offuscato pesa molto. La **soglia** si sceglie massimizzando l'indice di Youden (recall − FPR) **sullo storico** (solo `storico_base`: i campioni W1/W2 dello storico sono materiale di RQ3), mai sul test: lo storico è sbilanciato (50 malevoli, 10 benigni) e massimizzare F1 sceglierebbe la soglia degenere «tutto malevolo».
 
 ## 6. Modelli
 

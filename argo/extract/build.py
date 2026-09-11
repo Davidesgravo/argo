@@ -84,7 +84,10 @@ def load_dossiers(samples: Sequence[Sample], dossier_dir: Path = DOSSIER_DIR) ->
 def calibrate_baseline(
     samples: Sequence[Sample], dossiers: dict[str, Dossier], out_path: Path = BASELINE_PATH
 ) -> dict[str, Any]:
-    hist = [s for s in samples if s.split == "history" and s.id in dossiers]
+    # storico_base only: the W1/W2 history extras are RQ3 material, not calibration data.
+    hist = [
+        s for s in samples if s.split == "history" and s.history_set == "base" and s.id in dossiers
+    ]
     scores = [score(dossiers[s.id]) for s in hist]
     labels = [s.label == "malicious" for s in hist]
     threshold = calibrate(scores, labels)
