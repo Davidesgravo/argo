@@ -1,12 +1,37 @@
+import re
+
 import pytest
 
 from argo.extract.dossier import build_dossier
 from argo.prompts.fewshot import auto_answer, infer_technique, select_fewshot
-from argo.prompts.render import Example, compress_dossier, render
+from argo.prompts.render import TEMPLATE_DIR, Example, compress_dossier, render
 from argo.schema import Sample
 from tests.helpers import make_pkg, pkg_json
 
 DOSSIER = "PACKAGE: x@1\n## 1. vectors {weird braces}\n## 4. File changes\n+ a.js"
+
+# The 20 benigno_popolare + 20 benigno_difficile test-set packages (argo/dataset/benign.py
+# candidates that ended up in the test split). No prompt template may name any of them.
+TEST_BENIGN_NAMES = [
+    *("react", "react-dom", "express", "axios", "typescript", "chalk", "commander", "zod"),
+    *("vite", "eslint", "prettier", "dayjs", "uuid", "date-fns", "yargs", "dotenv"),
+    *("semver", "ws", "webpack", "rollup"),
+    *("esbuild", "puppeteer", "@swc/core", "core-js", "protobufjs", "bcrypt", "sqlite3"),
+    *("canvas", "@parcel/watcher", "cypress", "prisma", "msw", "@sentry/cli", "lefthook"),
+    *("deasync", "re2", "ffmpeg-static", "chromedriver", "geckodriver", "core-js-pure"),
+]
+
+
+def test_templates_name_no_test_set_package():
+    assert len(set(TEST_BENIGN_NAMES)) == 40
+    templates = sorted(TEMPLATE_DIR.glob("*.txt"))
+    names = {p.name for p in templates}
+    assert names >= {"taxonomy.txt", "instructions.txt", "system.txt", "p0.txt", "p3.txt"}
+    for path in templates:
+        text = path.read_text(encoding="utf-8")
+        for name in TEST_BENIGN_NAMES:
+            pattern = rf"(?<![\w@/.-]){re.escape(name)}(?![\w/-])"
+            assert not re.search(pattern, text, re.IGNORECASE), f"{name!r} in {path.name}"
 
 
 def test_p0_contains_dossier_and_instructions_but_no_taxonomy():
