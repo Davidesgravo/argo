@@ -177,8 +177,8 @@ JSON vincolato da schema tramite il parametro `format` di Ollama. L'ordine dei c
 |---|---|
 | **P0** zero-shot | ruolo minimo, dossier, domanda, schema |
 | **P1** checklist | P0 + tassonomia degli attacchi npm (scritta a mano dallo storico e dalla letteratura) + avvertenze sui falsi positivi (hook legittimi per compilare o scaricare binari) |
-| **P2** few-shot | P1 + 4 esempi fissi da `storico_base` (2 malevoli di tecniche diverse, 1 benigno comune, 1 benigno difficile), ciascuno con il dossier compresso e la risposta JSON attesa scritta a mano |
-| **P3** RAG | P1 + i 3 campioni più simili dell'indice scelto (similarità coseno sugli embedding del dossier), ciascuno con il dossier compresso (sezioni 1-3, ≤500 token) e la sua etichetta |
+| **P2** few-shot | P1 + 4 esempi fissi da `storico_base` (1 aggiornamento malevolo con vettore d'installazione, 1 pacchetto nuovo malevolo con vettore d'installazione e indicatori di rete/credenziali/esecuzione, 1 aggiornamento `benigno_popolare`, 1 aggiornamento `benigno_difficile` con script d'installazione invariato; a parità, il dossier più corto; esclusi i campioni con scope o prefisso del nome in comune con il test), ciascuno con il dossier compresso e la risposta JSON attesa, con prove copiate dal dossier compresso e da rivedere a mano |
+| **P3** RAG | P1 + i 2 malevoli e i 2 benigni più simili dell'indice scelto (similarità coseno sugli embedding del dossier; al massimo un vicino per famiglia di campagna, cioè scope npm oppure prefisso del nome prima del primo `-`; in ordine di similarità decrescente), ciascuno con il dossier compresso (sezioni 1-3, ≤500 token) e la sua etichetta |
 
 - I prompt sono in **inglese**.
 - Le parti fisse (istruzioni, tassonomia, esempi P2) stanno in testa, così Ollama può riusarne l'elaborazione.
@@ -202,16 +202,17 @@ Totale ~1.930 inferenze. Stima, da verificare con `argo bench`: **4-5 ore**, ese
 
 ### Runner
 - Ogni modello si carica una volta sola e processa tutti i suoi campioni.
-- Ogni predizione viene aggiunta a `predictions.jsonl` appena calcolata. Al riavvio, il run salta le coppie (campione, modello, prompt, indice) già presenti.
+- Ogni predizione viene aggiunta a `predictions.jsonl` appena calcolata. Al riavvio, il run salta le coppie (campione, modello, prompt, indice) già presenti, taglia un'eventuale ultima riga troncata e rifiuta di riprendere se l'impronta registrata in `config.json` (hash dei template e del file few-shot, versione dell'estrattore, hash del corpus e degli indici RAG usati, modello di embedding, versione di Ollama, commit git) è cambiata.
 - Prima di partire mostra la stima di durata, basata sui dati di `argo bench`.
 
 ### Record di predizione
 
 ```
 run_id, sample_id, model, model_digest, prompt_id, prompt_hash, rag_index | null,
-rag_neighbors | null, extractor_version, temperature, seed, num_ctx,
-raw_output, valid, evidence, reasoning, technique, verdict, confidence,
-latency_s, tokens_in, tokens_out, timestamp
+rag_neighbors | null, rag_neighbor_labels | null, extractor_version, temperature, seed,
+num_ctx, num_predict, attempts, raw_output, valid, evidence, reasoning, technique, verdict,
+confidence, latency_s (somma dei tentativi), tokens_in (ultimo tentativo),
+tokens_out (somma dei tentativi), timestamp
 ```
 
 ## 9. Metriche e report
@@ -220,12 +221,12 @@ latency_s, tokens_in, tokens_out, timestamp
 - recall, tasso di falsi positivi (FPR), precision, F1
 - FPR separato su `benigno_difficile` e su `pulito_accoppiato`
 - recall su `nato_malevolo`, `compromesso` e ciascuna ondata Shai-Hulud
-- latenza media e mediana, token in e out
+- latenza media e mediana, token in e out medi (`tokens_in_mean`, `tokens_out_mean`)
 - tasso di output non validi; nelle metriche principali un output non valido conta come risposta sbagliata, qualunque sia la classe
 
 **Statistica:**
 - intervalli di confidenza al 95% (bootstrap, 1.000 ricampionamenti) su recall, FPR, F1
-- test di McNemar esatto per confronti appaiati fra prompt sullo stesso modello
+- test di McNemar esatto per confronti appaiati fra prompt sullo stesso modello, con p-value corretti con Holm su tutti i confronti della tabella (`p_holm`)
 
 **RQ3:** tasso di rilevamento su W2 e W3 con `storico_base` contro storico crescente, e FPR sui puliti accoppiati. Con 5 campioni per ondata è un **caso di studio qualitativo**, e il capitolo lo dichiara.
 
