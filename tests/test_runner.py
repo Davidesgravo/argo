@@ -142,6 +142,36 @@ def test_run_resumes(tmp_path):
     assert json.loads((tmp_path / "r1" / "config.json").read_text())["n_jobs"] == 3
 
 
+def test_resume_repairs_truncated_tail(tmp_path):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    dossiers = {s.id: _d(s.id) for s in SAMPLES}
+    client = FakeClient([GOOD.model_dump_json()])
+    pred = run(cfg, SAMPLES[:1], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    fragment = '{"run_id": "r1", "sample_id": "w2", "mod'  # killed mid-write
+    with pred.open("a") as f:
+        f.write(fragment)
+
+    run(cfg, SAMPLES[:2], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+
+    records = [json.loads(line) for line in pred.read_text().splitlines()]  # all valid JSON
+    assert [r["sample_id"] for r in records] == ["a", "w2"]
+    assert pred.read_text().endswith("\n")
+    assert (tmp_path / "r1" / "truncated_tail.txt").read_text() == fragment
+
+
+def test_resume_terminates_valid_last_line_without_newline(tmp_path):
+    cfg = RunConfig("r1", ["m"], ["p0"])
+    dossiers = {s.id: _d(s.id) for s in SAMPLES}
+    client = FakeClient([GOOD.model_dump_json()])
+    pred = run(cfg, SAMPLES[:1], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+    pred.write_text(pred.read_text().rstrip("\n"))
+
+    run(cfg, SAMPLES[:2], dossiers, Predictor(client, []), tmp_path, log=lambda _: None)
+
+    assert [json.loads(line)["sample_id"] for line in pred.read_text().splitlines()] == ["a", "w2"]
+    assert not (tmp_path / "r1" / "truncated_tail.txt").exists()
+
+
 def test_completed_keys_skips_truncated_last_line(tmp_path):
     path = tmp_path / "predictions.jsonl"
     good = {"sample_id": "a", "model": "m", "prompt_id": "p0", "rag_index": None}

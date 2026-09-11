@@ -185,6 +185,33 @@ def completed_keys(pred_path: Path) -> set[tuple[str, str, str, str]]:
     return keys
 
 
+def repair_tail(pred_path: Path, tail_path: Path) -> None:
+    """Make predictions.jsonl safe to append to after a crash.
+
+    A run killed mid-write leaves a partial last line; appending would glue the next
+    record onto it. The fragment is cut off (and kept in `tail_path` for inspection);
+    a valid last line that merely lacks its newline gets one.
+    """
+    if not pred_path.exists():
+        return
+    data = pred_path.read_bytes()
+    body = data.rstrip(b"\n")
+    if not body:
+        return
+    start = body.rfind(b"\n") + 1  # start of the last non-empty line
+    try:
+        json.loads(body[start:])
+    except ValueError:
+        with tail_path.open("ab") as f:
+            f.write(data[start:])
+        with pred_path.open("r+b") as f:
+            f.truncate(start)
+        return
+    if not data.endswith(b"\n"):
+        with pred_path.open("ab") as f:
+            f.write(b"\n")
+
+
 def run(
     cfg: RunConfig,
     samples: Sequence[Sample],
@@ -198,6 +225,7 @@ def run(
     pred_path = out_dir / "predictions.jsonl"
     jobs = [j for j in plan_jobs(cfg, samples) if j.sample_id in dossiers]
     (out_dir / "config.json").write_text(json.dumps({**asdict(cfg), "n_jobs": len(jobs)}, indent=2))
+    repair_tail(pred_path, out_dir / "truncated_tail.txt")
     done = completed_keys(pred_path)
     todo = [j for j in jobs if j.key not in done]
     log(f"run {cfg.run_id}: {len(jobs)} jobs, {len(jobs) - len(todo)} already done")
