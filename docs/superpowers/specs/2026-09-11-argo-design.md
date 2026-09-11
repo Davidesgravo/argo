@@ -119,8 +119,11 @@ Il contenuto dell'archivio della versione in esame e, se esiste, di quella prece
 ### Dossier
 Testo strutturato, formato identico per tutti i campioni, budget di **~2.000 token** (stima: caratteri / 4). Si riempie in ordine di priorità; se il budget si esaurisce, si tronca dal fondo e si annota cosa è stato omesso.
 
-1. **Script di lifecycle** (`preinstall`, `install`, `postinstall`, `prepare`): testo completo e diff rispetto alla versione precedente.
-2. **File invocati da quegli script:** contenuto integrale se sotto ~2 KB, altrimenti un profilo (dimensione, lunghezza media e massima delle righe, entropia di Shannon, identificatori `_0x…`, stringhe base64 o hex lunghe, esito "offuscato sì/no").
+1. **Vettori di esecuzione all'installazione:**
+   - script di lifecycle (`preinstall`, `install`, `postinstall`, `prepare`), con testo completo e diff rispetto alla versione precedente;
+   - dipendenze (`dependencies`, `optionalDependencies`) aggiunte o cambiate con uno specificatore **non-registry** (`github:`, `git+…`, URL http(s), `file:`). È il vettore di Mini Shai-Hulud (W3): nessuno script di lifecycle, ma `optionalDependencies: {"@tanstack/setup": "github:tanstack/router#<commit>"}`, che esegue il payload durante l'installazione;
+   - file aggiunti **fuori dal campo `files`** dichiarato in `package.json` (es. `router_init.js` nella radice con `files: ["dist","src"]`).
+2. **File invocati da quegli script, o sospetti per la regola precedente:** contenuto integrale se sotto ~2 KB, altrimenti un profilo (dimensione, lunghezza media e massima delle righe, entropia di Shannon, identificatori `_0x…`, stringhe base64 o hex lunghe, esito "offuscato sì/no").
 3. **Indicatori** nei file nuovi o modificati (tutti i file, se è un pacchetto nuovo), con `file:riga` e un frammento di ≤200 caratteri, raggruppati per categoria:
    - `network`: URL verso host diversi dal registry, `fetch`/`https.request`/`axios`, webhook, IP letterali
    - `exec`: `child_process`, `eval`, `new Function`, `vm.run*`
