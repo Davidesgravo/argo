@@ -87,6 +87,15 @@ def build_dossier(
     hits += scan_package(new, touched)
     first = set(targets) | {SCRIPTS_PSEUDO_PATH}
     hits.sort(key=lambda h: (h.path not in first, CATEGORY_ORDER.index(h.category), h.path, h.line))
+    seen_hits: set[tuple[str, str, int]] = set()
+    deduped_hits: list[Hit] = []
+    for h in hits:
+        key = (h.category, h.path, h.line)
+        if key in seen_hits:
+            continue
+        seen_hits.add(key)
+        deduped_hits.append(h)
+    hits = deduped_hits
 
     w = _Writer(budget_tokens * 4)
     if old is not None:

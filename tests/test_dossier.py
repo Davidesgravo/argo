@@ -82,3 +82,19 @@ def test_budget_truncates_and_reports():
     d = build_dossier("big", "big", "1.0.0", make_pkg(files), None, None, budget_tokens=500)
     assert d.truncated and "omitted for length" in d.text
     assert d.est_tokens <= 500 + 60
+
+
+def test_dedup_exec_hits_on_same_line():
+    # "child_process" and "execSync(" both match the `exec` pattern on the same source
+    # line; the dossier must collapse that into a single hit, not one per sub-match.
+    pkg = make_pkg(
+        {
+            "package.json": pkg_json("y", "1.0.0", scripts={"preinstall": "node setup.js"}),
+            "setup.js": "require('child_process').execSync('x')",
+        }
+    )
+    d = build_dossier("y@1.0.0", "y", "1.0.0", pkg, None, None)
+    exec_lines = [ln for ln in d.text.splitlines() if ln.startswith("- [exec] setup.js:1")]
+    assert len(exec_lines) == 1
+    exec_hits = [h for h in d.hits if (h.category, h.path, h.line) == ("exec", "setup.js", 1)]
+    assert len(exec_hits) == 1
