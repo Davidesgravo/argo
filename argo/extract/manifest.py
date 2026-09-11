@@ -63,7 +63,7 @@ def dep_changes(new: dict[str, Any], old: dict[str, Any] | None) -> list[DepChan
 
 
 def _clean_pattern(p: str) -> str:
-    return p.strip().removeprefix("./").rstrip("/")
+    return p.strip().removeprefix("./").removeprefix("/").rstrip("/")
 
 
 def _included(path: str, patterns: list[str], main: str | None) -> bool:
@@ -87,7 +87,9 @@ def outside_files(paths: Iterable[str], manifest: dict[str, Any]) -> list[str]:
     files = manifest.get("files")
     if not isinstance(files, list):
         return []
-    patterns = [_clean_pattern(str(f)) for f in files]
+    # Negated patterns ("!...") only exclude; they are never used as inclusion
+    # patterns (full negation semantics are out of scope).
+    patterns = [_clean_pattern(str(f)) for f in files if not str(f).strip().startswith("!")]
     main = manifest.get("main")
     main_s = main if isinstance(main, str) else None
     return [p for p in paths if not _included(p, patterns, main_s)]

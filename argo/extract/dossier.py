@@ -7,6 +7,7 @@ from argo.extract.profile import profile_file
 from argo.schema import Dossier, FileProfile, Hit
 
 INLINE_MAX_BYTES = 2048
+MAX_OUTSIDE_FILES_SHOWN = 10
 SCRIPTS_PSEUDO_PATH = "package.json#scripts"
 SECTION_TITLES: tuple[str, ...] = (
     "## 1. Install-time execution vectors",
@@ -43,6 +44,14 @@ class _Writer:
             return
         self.force(line)
 
+    def finish_section(self, section: str) -> None:
+        """Call after a section's content is written. If lines were dropped for
+        budget reasons, force an in-section marker so the section never reads as
+        genuinely empty ("- none") when it actually had content that got cut."""
+        n = self.omitted.get(section, 0)
+        if n:
+            self.force(f"- ({n} more lines omitted for length)")
+
 
 def _yes(flag: bool) -> str:
     return "yes" if flag else "no"
@@ -77,8 +86,14 @@ def build_dossier(
     touched = [c.path for c in changes if c.status != "removed"]
     deps = dep_changes(m_new, m_old)
     outside = outside_files(added, m_new)
+    # Only the 10 largest outside-declared-`files` are treated as suspicious enough to
+    # profile/prioritize; with hundreds of incidental outside files (e.g. W2-like
+    # payloads), including all of them would drown the real signal (see MAX_OUTSIDE_
+    # FILES_SHOWN). Dossier.outside_files below still keeps the full, uncapped list.
+    outside_by_size = sorted(outside, key=lambda p: sizes.get(p, 0), reverse=True)
+    shown_outside = outside_by_size[:MAX_OUTSIDE_FILES_SHOWN]
     targets = script_targets(life, new.files)
-    targets += [p for p in outside if p not in targets]
+    targets += [p for p in shown_outside if p not in targets]
     profiles = [profile_file(p, new.files[p]) for p in targets]
 
     hits: list[Hit] = []
@@ -126,10 +141,15 @@ def build_dossier(
         if d.non_registry
     ]
     vectors += [
-        f"- added file outside declared `files`: {p} ({fmt_size(sizes.get(p, 0))})" for p in outside
+        f"- added file outside declared `files`: {p} ({fmt_size(sizes.get(p, 0))})"
+        for p in shown_outside
     ]
+    if len(outside_by_size) > MAX_OUTSIDE_FILES_SHOWN:
+        extra = len(outside_by_size) - MAX_OUTSIDE_FILES_SHOWN
+        vectors.append(f"- … and {extra} more files outside declared `files`")
     for line in vectors or ["- none"]:
         w.add(line, "vectors")
+    w.finish_section("vectors")
 
     w.force("")
     w.force(SECTION_TITLES[1])
@@ -142,12 +162,14 @@ def build_dossier(
             w.add(f"{head}\n```\n{body}\n```", "files")
         else:
             w.add(f"{head}\n{_profile_line(prof)}", "files")
+    w.finish_section("files")
 
     w.force("")
     scope = "added/modified code" if old is not None else "package code"
     w.force(f"{SECTION_TITLES[2]} {scope}")
     for line in [f"- [{h.category}] {h.path}:{h.line}  {h.snippet}" for h in hits] or ["- none"]:
         w.add(line, "patterns")
+    w.finish_section("patterns")
 
     w.force("")
     w.force(SECTION_TITLES[3] + (" vs previous version" if old is not None else " (new package)"))
@@ -158,6 +180,7 @@ def build_dossier(
     symbol = {"added": "+", "modified": "~", "removed": "-"}
     for c in changes:
         w.add(f"{symbol[c.status]} {c.path} ({fmt_size(c.size)})", "changes")
+    w.finish_section("changes")
 
     if w.omitted:
         w.force("")

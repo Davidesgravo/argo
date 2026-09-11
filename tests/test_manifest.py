@@ -64,6 +64,16 @@ def test_outside_files():
     assert outside_files(["lib/x.js", "y.js"], {"files": ["lib/**/*.js"]}) == ["y.js"]
 
 
+def test_outside_files_leading_slash_and_negated_pattern_ignored():
+    # npm `files` patterns may start with "/" (anchored to package root) and may be
+    # negations ("!...", exclude-only). A leading "/" must not make every file look
+    # like it is outside the declared set, and a negated pattern must be ignored for
+    # inclusion purposes (never treated as its own inclusion pattern).
+    m = {"files": ["/lib", "!lib/test"]}
+    paths = ["lib/a.js", "lib/test/x.js", "other.js"]
+    assert outside_files(paths, m) == ["other.js"]
+
+
 def test_script_targets():
     files = ["bundle.js", "scripts/setup.js", "index.js"]
     scripts = {
