@@ -189,3 +189,10 @@ def test_query_cache_does_not_read_until_used(tmp_path):
     path = tmp_path / "q.json"
     path.write_text("{not json")  # would fail if read eagerly
     QueryCache(path, "embed-a")
+
+
+def test_query_cache_recovers_from_a_corrupt_file(tmp_path):
+    path = tmp_path / "q.json"
+    path.write_text('{"abc": [0.1, 0.')  # left by an older, non-atomic writer
+    assert QueryCache(path, "embed-a").get("bun", fake_embed) == fake_embed(["bun"])[0]
+    assert len(json.loads(path.read_text())) == 1

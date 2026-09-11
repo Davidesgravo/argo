@@ -116,7 +116,10 @@ class QueryCache:
 
     def _load(self) -> dict[str, list[float]]:
         if self._data is None:
-            self._data = json.loads(self.path.read_text()) if self.path.exists() else {}
+            try:
+                self._data = json.loads(self.path.read_text()) if self.path.exists() else {}
+            except json.JSONDecodeError:  # a cache: a corrupt file is just rebuilt
+                self._data = {}
         return self._data
 
     def key(self, text: str) -> str:
