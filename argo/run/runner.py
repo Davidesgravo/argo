@@ -126,16 +126,12 @@ class Predictor:
         think = False if model in THINKING_MODELS else None
         schema = Verdict.model_json_schema()
         res = self.client.chat(model, rp.system, rp.user, schema, options, think)
-        latency, t_in, t_out = res.latency_s, res.tokens_in, res.tokens_out
+        attempts, latency, t_out = 1, res.latency_s, res.tokens_out
         output = _parse(res.content)
         if output is None:
             options["num_predict"] = RETRY_NUM_PREDICT
             res = self.client.chat(model, rp.system, rp.user, schema, options, think)
-            latency, t_in, t_out = (
-                latency + res.latency_s,
-                t_in + res.tokens_in,
-                t_out + res.tokens_out,
-            )
+            attempts, latency, t_out = 2, latency + res.latency_s, t_out + res.tokens_out
             output = _parse(res.content)
         return Prediction(
             run_id=run_id,
@@ -151,11 +147,13 @@ class Predictor:
             temperature=float(options["temperature"]),
             seed=int(options["seed"]),
             num_ctx=int(options["num_ctx"]),
+            num_predict=int(options["num_predict"]),  # value used on the final attempt
+            attempts=attempts,
             raw_output=res.content,
             valid=output is not None,
             output=output,
             latency_s=round(latency, 3),
-            tokens_in=t_in,
+            tokens_in=res.tokens_in,  # prompt of the final attempt (a retry re-sends it)
             tokens_out=t_out,
             timestamp=datetime.now(UTC).isoformat(),
         )

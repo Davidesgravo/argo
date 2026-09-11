@@ -118,10 +118,12 @@ class Prediction(BaseModel):
     temperature: float
     seed: int
     num_ctx: int
+    num_predict: int  # value used on the final attempt
+    attempts: int
     raw_output: str
     valid: bool
     output: Verdict | None
-    latency_s: float
-    tokens_in: int
-    tokens_out: int
+    latency_s: float  # summed over attempts
+    tokens_in: int  # prompt tokens of the final attempt
+    tokens_out: int  # summed over attempts
     timestamp: str

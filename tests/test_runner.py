@@ -17,7 +17,9 @@ class FakeClient:
 
     def chat(self, model, system, user, schema, options, think=None):
         self.calls.append({"model": model, "user": user, "options": dict(options), "think": think})
-        return ChatResult(self.replies[min(len(self.calls), len(self.replies)) - 1], 100, 10, 0.5)
+        # prompt tokens grow per call (100, 110, ...) so "final attempt" vs "sum" is observable
+        reply = self.replies[min(len(self.calls), len(self.replies)) - 1]
+        return ChatResult(reply, 90 + 10 * len(self.calls), 10, 0.5)
 
     def model_digest(self, model):
         return "sha256:" + model
@@ -108,6 +110,7 @@ def test_predict_valid_and_thinking_flag():
     client = FakeClient([GOOD.model_dump_json()])
     p = Predictor(client, fewshot=[]).predict("r", "a", _d("a"), "qwen3:4b", "p1", None)
     assert p.valid and p.output == GOOD and p.model_digest == "sha256:qwen3:4b"
+    assert (p.attempts, p.num_predict, p.tokens_in, p.tokens_out) == (1, 300, 100, 10)
     assert client.calls[0]["think"] is False and client.calls[0]["options"]["num_ctx"] == 8192
 
 
@@ -116,7 +119,9 @@ def test_predict_retries_once_with_more_tokens_then_gives_up():
     p = Predictor(client, fewshot=[]).predict("r", "a", _d("a"), "llama3.2:3b", "p0", None)
     assert not p.valid and p.output is None and len(client.calls) == 2
     assert client.calls[1]["options"]["num_predict"] == 600 and client.calls[0]["think"] is None
-    assert p.tokens_in == 200 and p.latency_s == 1.0
+    # tokens_in = prompt tokens of the final attempt; tokens_out and latency summed
+    assert (p.attempts, p.num_predict) == (2, 600)
+    assert p.tokens_in == 110 and p.tokens_out == 20 and p.latency_s == 1.0
 
 
 def test_p2_uses_fewshot_examples():
