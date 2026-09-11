@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets
+.env
+
+# Dataset: contains encrypted malware samples and registry caches — never commit
+data/
+
+# macOS
+.DS_Store
