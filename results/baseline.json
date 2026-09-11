@@ -1,5 +1,5 @@
 {
-  "threshold": 0,
+  "threshold": 3.5,
   "weights": {
     "lifecycle_changed": 2.0,
     "non_registry_dep": 3.0,
@@ -13,5 +13,8 @@
     "network": 0.5
   },
   "n_history": 60,
-  "f1_history": 0.9091
+  "f1_history": 0.7561,
+  "recall_history": 0.62,
+  "fpr_history": 0.1,
+  "youden_history": 0.52
 }
