@@ -1,7 +1,10 @@
 import hashlib
 import json
 
-from argo.prompts.rag import QueryCache, RagIndex, build_index
+import numpy as np
+
+from argo.prompts.rag import QueryCache, RagIndex, build_index, family, package_name
+from argo.prompts.render import Example
 from argo.schema import Dossier, Sample
 
 
@@ -74,9 +77,82 @@ def test_query_returns_most_similar_first(tmp_path):
     idx = build_index("storico_w1", SAMPLES, DOSSIERS, fake_embed)
     idx.save(tmp_path)
     loaded = RagIndex.load("storico_w1", tmp_path)
-    [first, *_] = loaded.query(fake_embed(["bun"])[0], k=2)
+    [first, *_] = loaded.query(fake_embed(["bun"])[0])
     assert first.example.sample_id == "b" and first.example.label == "malicious"
-    assert len(loaded.query(fake_embed(["x"])[0], k=2)) == 2
+    assert len(loaded.query(fake_embed(["x"])[0])) == 3  # 2 malicious + the only benign
+
+
+def _index(rows: list[tuple[str, str, float]]) -> RagIndex:
+    """rows: (sample_id, label, cosine similarity to the query vector [1, 0])."""
+    examples = [Example(sid, label, f"PACKAGE: {sid}") for sid, label, _ in rows]
+    vectors = np.array([[sim, float(np.sqrt(1 - sim**2))] for _, _, sim in rows])
+    return RagIndex("t", examples, vectors)
+
+
+def _ids(idx: RagIndex) -> list[str]:
+    return [n.example.sample_id for n in idx.query([1.0, 0.0])]
+
+
+def test_family_and_package_name():
+    assert (
+        family("@rspack/cli") == "@rspack" and family("@things-factory/shell") == "@things-factory"
+    )
+    assert family("gita-menjes78-riris") == "gita" and family("vant") == "vant"
+    assert (
+        package_name("@rspack/cli@1.1.7") == "@rspack/cli" and package_name("vant@4.9.13") == "vant"
+    )
+    assert package_name("@scope/x") == "@scope/x"
+
+
+def test_query_is_balanced_two_plus_two_by_similarity():
+    idx = _index(
+        [
+            ("m1@1", "malicious", 0.99),
+            ("m2@1", "malicious", 0.98),
+            ("m3@1", "malicious", 0.97),
+            ("m4@1", "malicious", 0.96),
+            ("b1@1", "benign", 0.50),
+            ("b2@1", "benign", 0.40),
+            ("b3@1", "benign", 0.30),
+        ]
+    )
+    assert _ids(idx) == ["m1@1", "m2@1", "b1@1", "b2@1"]
+
+
+def test_query_orders_by_similarity_across_classes():
+    idx = _index(
+        [
+            ("b2@1", "benign", 0.60),
+            ("m2@1", "malicious", 0.70),
+            ("b1@1", "benign", 0.80),
+            ("m1@1", "malicious", 0.90),
+            ("m3@1", "malicious", 0.10),
+        ]
+    )
+    ns = idx.query([1.0, 0.0])
+    assert [n.example.sample_id for n in ns] == ["m1@1", "b1@1", "m2@1", "b2@1"]
+    assert [round(n.similarity, 2) for n in ns] == [0.9, 0.8, 0.7, 0.6]
+
+
+def test_query_keeps_one_neighbour_per_family():
+    idx = _index(
+        [
+            ("@evil/a@1", "malicious", 0.99),
+            ("@evil/b@2", "malicious", 0.98),
+            ("gita-x@1", "malicious", 0.97),
+            ("gita-y@1", "malicious", 0.96),
+            ("solo@1", "malicious", 0.50),
+            ("fine-a@1", "benign", 0.90),
+            ("fine-b@1", "benign", 0.80),
+            ("other@1", "benign", 0.20),
+        ]
+    )
+    assert _ids(idx) == ["@evil/a@1", "gita-x@1", "fine-a@1", "other@1"]
+
+
+def test_query_takes_what_exists_when_a_class_is_short():
+    idx = _index([("m1@1", "malicious", 0.9), ("m2@1", "malicious", 0.8), ("b1@1", "benign", 0.1)])
+    assert _ids(idx) == ["m1@1", "m2@1", "b1@1"]
 
 
 def test_query_cache_persists(tmp_path):

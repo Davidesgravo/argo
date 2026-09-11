@@ -74,7 +74,13 @@ def show_prediction(p: Prediction) -> None:
     st.write(o.reasoning)
     for e in o.evidence:
         st.markdown(f"- {e}")
-    extra = f" · vicini RAG: {', '.join(p.rag_neighbors)}" if p.rag_neighbors else ""
+    extra = ""
+    if p.rag_neighbors:
+        labels = p.rag_neighbor_labels or [""] * len(p.rag_neighbors)
+        shown = [
+            f"{n} ({lab})" if lab else n for n, lab in zip(p.rag_neighbors, labels, strict=False)
+        ]
+        extra = f" · vicini RAG: {', '.join(shown)}"
     st.caption(f"{p.latency_s:.1f} s · {p.tokens_in} token in / {p.tokens_out} out{extra}")
 
 

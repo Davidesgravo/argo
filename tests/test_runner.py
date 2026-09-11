@@ -165,7 +165,10 @@ def _hist_embed(texts):
 
 def test_p3_retrieves_neighbors_and_caches_query(tmp_path):
     history = [
-        _s(hid, "nato_malevolo", split="history", history_set="base") for hid in HIST_VECTORS
+        _s(hid, "nato_malevolo", split="history", history_set="base") for hid in ("h1", "h2")
+    ] + [
+        _s(hid, "benigno_popolare", split="history", history_set="base", label="benign")
+        for hid in ("h3", "h4")
     ]
     dossiers = {hid: _d(hid) for hid in HIST_VECTORS}
     idx = build_index("storico_base", history, dossiers, _hist_embed)
@@ -177,9 +180,12 @@ def test_p3_retrieves_neighbors_and_caches_query(tmp_path):
     p = predictor.predict("r", "a", _d("a"), "m", "p3", "storico_base")
 
     assert p.rag_index == "storico_base"
-    assert p.rag_neighbors is not None and len(p.rag_neighbors) == 3
-    assert set(p.rag_neighbors) <= set(HIST_VECTORS)
-    assert p.rag_neighbors[0] == "h1"  # unique top match for the fake query vector
+    # 2 malicious + 2 benign, by similarity: h1 (1.0), h4 (0.71), then the two at 0.0
+    assert p.rag_neighbors is not None and p.rag_neighbors[:2] == ["h1", "h4"]
+    assert set(p.rag_neighbors) == set(HIST_VECTORS)
+    assert p.rag_neighbor_labels == [
+        {"h1": "malicious", "h2": "malicious"}.get(i, "benign") for i in p.rag_neighbors
+    ]
     assert "PACKAGE: h1" in client.calls[0]["user"]  # top neighbour's excerpt reached the prompt
     assert client.embed_calls and client.embed_calls[0].startswith(QUERY_PREFIX)
 
@@ -188,7 +194,7 @@ def test_p3_retrieves_neighbors_and_caches_query(tmp_path):
     assert len(client.embed_calls) == calls_before  # query cache hit, no re-embed
 
     p1 = predictor.predict("r", "a", _d("a"), "m", "p1", None)
-    assert p1.rag_index is None and p1.rag_neighbors is None
+    assert p1.rag_index is None and p1.rag_neighbors is None and p1.rag_neighbor_labels is None
 
 
 def test_predictor_query_cache_path_is_configurable(tmp_path):

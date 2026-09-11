@@ -105,7 +105,7 @@ class Predictor:
         if index_name not in self._indexes:
             self._indexes[index_name] = RagIndex.load(index_name, self.rag_dir)
         vector = self._queries.get(compress_dossier(dossier.text), self._embed)
-        return [n.example for n in self._indexes[index_name].query(vector, k=3)]
+        return [n.example for n in self._indexes[index_name].query(vector)]
 
     def predict(
         self,
@@ -146,6 +146,7 @@ class Predictor:
             prompt_hash=rp.prompt_hash,
             rag_index=rag_index if prompt_id == "p3" else None,
             rag_neighbors=[e.sample_id for e in examples] if prompt_id == "p3" else None,
+            rag_neighbor_labels=[e.label for e in examples] if prompt_id == "p3" else None,
             extractor_version=dossier.extractor_version,
             temperature=float(options["temperature"]),
             seed=int(options["seed"]),

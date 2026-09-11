@@ -113,6 +113,7 @@ class Prediction(BaseModel):
     prompt_hash: str
     rag_index: str | None
     rag_neighbors: list[str] | None
+    rag_neighbor_labels: list[str] | None  # P3 only, aligned with rag_neighbors
     extractor_version: str
     temperature: float
     seed: int

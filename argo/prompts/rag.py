@@ -28,6 +28,17 @@ class Neighbor:
     similarity: float
 
 
+def package_name(sample_id: str) -> str:
+    """`name@version` -> `name` (scoped names keep their leading `@`)."""
+    head, sep, _ = sample_id.rpartition("@")
+    return head if sep and head else sample_id
+
+
+def family(name: str) -> str:
+    """Campaign family: the npm scope for scoped names, else the name stem before the first -."""
+    return name.split("/", 1)[0] if name.startswith("@") else name.split("-", 1)[0]
+
+
 def _normalize(m: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(m, axis=-1, keepdims=True)
     return m / np.where(norms == 0, 1.0, norms)
@@ -54,11 +65,26 @@ class RagIndex:
         examples = [Example(m["sample_id"], m["label"], m["excerpt"]) for m in meta]
         return cls(name, examples, np.load(rag_dir / f"{name}.npy"))
 
-    def query(self, vector: Sequence[float], k: int = 3) -> list[Neighbor]:
+    def query(self, vector: Sequence[float], per_label: int = 2) -> list[Neighbor]:
+        """The `per_label` most similar malicious and benign cases, at most one per campaign
+        family, ordered by similarity (descending). A short class contributes what it has."""
         q = _normalize(np.asarray(vector, dtype=float))
         sims = self.vectors @ q
-        order = np.argsort(-sims)[:k]
-        return [Neighbor(self.examples[int(i)], float(sims[int(i)])) for i in order]
+        order = sorted(range(len(self.examples)), key=lambda i: (-sims[i], i))
+        taken = {"malicious": 0, "benign": 0}
+        families: set[str] = set()
+        out: list[Neighbor] = []
+        for i in order:
+            ex = self.examples[i]
+            fam = family(package_name(ex.sample_id))
+            if taken[ex.label] >= per_label or fam in families:
+                continue
+            out.append(Neighbor(ex, float(sims[i])))
+            taken[ex.label] += 1
+            families.add(fam)
+            if all(n >= per_label for n in taken.values()):
+                break
+        return out
 
 
 def build_index(
